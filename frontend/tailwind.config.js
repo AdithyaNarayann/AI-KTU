@@ -7,44 +7,24 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: "#080c14",
-        surface: "#0f172a",
-        border: "#1e293b",
-        accent: {
-          cyan: "#06b6d4",
-          emerald: "#10b981",
-          amber: "#f59e0b",
-          rose: "#f43f5e",
-          purple: "#a855f7",
-        }
+        paper: "#F5F2EA",
+        ink: "#111111",
+        accent: "#FF4F00",
+        hairline: "#D9D4C7",
       },
       fontFamily: {
-        mono: [
-          'JetBrains Mono',
-          'Fira Code',
-          'ui-monospace',
-          'SFMono-Regular',
-          'Menlo',
-          'Monaco',
-          'Consolas',
-          'monospace',
-        ],
+        sans: ['"Space Grotesk"', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'monospace'],
       },
-      animation: {
-        'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        'shock-flash': 'shock 0.8s ease-out forwards',
-        'glow-pulse': 'glow 1.5s ease-in-out infinite',
+      borderRadius: {
+        DEFAULT: '0px',
+        none: '0px',
+        sm: '0px',
+        md: '0px',
+        lg: '0px',
+        xl: '0px',
+        full: '0px',
       },
-      keyframes: {
-        shock: {
-          '0%': { transform: 'scale(1.05)', filter: 'brightness(2) contrast(1.5)' },
-          '100%': { transform: 'scale(1)', filter: 'none' },
-        },
-        glow: {
-          '0%, 100%': { opacity: '0.8', filter: 'drop-shadow(0 0 12px rgba(16, 185, 129, 0.8))' },
-          '50%': { opacity: '1', filter: 'drop-shadow(0 0 24px rgba(6, 182, 212, 1))' },
-        }
-      }
     },
   },
   plugins: [],

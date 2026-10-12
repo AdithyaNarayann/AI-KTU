@@ -1,19 +1,17 @@
-"""Configuration, layout, constants, and Pydantic schemas for WatchItLearn."""
+"""Configuration, constants, 11x11 maze layout, and schemas for WatchItLearn."""
 
-from typing import List, Optional, Tuple, Literal, Dict, Any
-from pydantic import BaseModel, Field
-
+from typing import List, Tuple, Optional, Literal
+from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
-# Grid & Game Constants
+# Maze Geometry & Constants
 # ---------------------------------------------------------------------------
-GRID_ROWS = 8
-GRID_COLS = 8
-NUM_KEY_STATES = 2  # 0: no key, 1: has key
-NUM_STATES = GRID_ROWS * GRID_COLS * NUM_KEY_STATES  # 128
+MAZE_ROWS = 11
+MAZE_COLS = 11
+NUM_STATES = MAZE_ROWS * MAZE_COLS  # 121
 NUM_ACTIONS = 4
 
-# Action indices & coordinate deltas: UP=0, DOWN=1, LEFT=2, RIGHT=3
+# Action deltas: 0: UP, 1: DOWN, 2: LEFT, 3: RIGHT
 ACTION_UP = 0
 ACTION_DOWN = 1
 ACTION_LEFT = 2
@@ -27,134 +25,70 @@ ACTIONS: List[Tuple[int, int]] = [
 ]
 
 ACTION_NAMES = ["UP", "DOWN", "LEFT", "RIGHT"]
-ACTION_ARROWS = ["↑", "↓", "←", "→"]
 
-# Default ASCII Layout (8x8)
-# Start S at (1,1), Key K at (5,1), Door D at (3,5), Goal G at (6,6)
-# Lava strip LLLL at row 6 cols 2..5
-DEFAULT_ASCII_LAYOUT: List[str] = [
-    "########",
-    "#S...#.#",
-    "#.#..#.#",
-    "#.#..D.#",
-    "#.#..#.#",
-    "#K...#.#",
-    "#.LLLLG#",
-    "########",
+# 11x11 Tile Maze: Start at (1,1), Goal at (9,9)
+# Shortest BFS optimal path: 28 steps
+# Tempting wrong turn: heading east at (1,1) into a 4-tile dead end (1,2..5)
+# 3 dead-end branches: (1,2..5), interior cul-de-sac from (7,3), and row 9 left branch
+MAZE_ASCII: List[str] = [
+    "###########",
+    "#S....#...#",
+    "#.#####.#.#",
+    "#.#.#...#.#",
+    "#.#.#.#.#.#",
+    "#.#...#.#.#",
+    "#.#####.#.#",
+    "#.......#.#",
+    "#########.#",
+    "#........G#",
+    "###########",
 ]
 
-# Rewards
+# Rewards & Truncation
 REWARD_STEP = -0.01
-REWARD_LAVA = -1.0
 REWARD_GOAL = 1.0
-REWARD_KEY_SHAPING = 0.25
+MAX_ATTEMPT_STEPS = 200
 
-MAX_EPISODE_STEPS = 120
-
-# ---------------------------------------------------------------------------
-# Learning & Timing Hyperparameters
-# ---------------------------------------------------------------------------
-DEFAULT_ALPHA = 0.5
-DEFAULT_GAMMA = 0.97
-DEFAULT_TARGET_SECONDS = 75.0
-EXPLORE_RATIO = 0.70  # reaches epsilon floor at 70% of T
+# Learning Hyperparameters
+ALPHA = 0.5
+GAMMA = 0.97
+TARGET_SECONDS = 40.0
+EXPLORE_RATIO = 0.70  # reaches floor at 70% of T (28s)
 EPSILON_START = 1.0
 EPSILON_FLOOR = 0.02
-EDIT_SHOCK_EPSILON = 0.35
-EDIT_SHOCK_DECAY_SEC = 10.0
 
-CONVERGENCE_CHECK_INTERVAL = 25  # episodes
+# Pacing & Convergence
+PHASE1_MAX_ATTEMPTS = 5
+PHASE1_STEPS_PER_SEC = 10.0
+TURBO_FPS = 25.0
+FINAL_WALK_STEPS_PER_SEC = 12.0
+
+CONVERGENCE_CHECK_INTERVAL = 25
 CONVERGENCE_ROLLOUTS = 10
 CONVERGENCE_STREAK_REQUIRED = 3
-
-PHASE1_MAX_EPISODES = 8
-PHASE1_STEPS_PER_SEC = 12.0
-TURBO_FPS = 30.0
-BELLMAN_SAMPLE_RATE_HZ = 5.0
+MAX_TIMEOUT_SECONDS = TARGET_SECONDS * 1.5  # 60s
 
 
 # ---------------------------------------------------------------------------
-# Pydantic Models for WebSocket and REST APIs
+# WebSocket Frame Schemas
 # ---------------------------------------------------------------------------
-class AgentState(BaseModel):
-    r: int
-    c: int
-    has_key: bool
+StageType = Literal["idle", "exploring", "learning", "converging", "solved"]
 
 
-class Metrics(BaseModel):
-    ret_ma: float
-    success_ma: float
-    steps_ma: float
-    greedy_success: float
-    optimal_len: int
-    greedy_len: int
+class ResultData(BaseModel):
+    steps: int
+    optimal: int
 
 
-class BellmanUpdate(BaseModel):
-    s: Tuple[int, int, int]  # (r, c, k)
-    a: int
-    r: float
-    s2: Tuple[int, int, int]  # (nr, nc, nk)
-    old_q: float
-    target: float
-    new_q: float
-    algo: str
-
-
-class FrameMessage(BaseModel):
-    type: Literal["frame"] = "frame"
-    t_elapsed: float
-    t_target: float
-    episode: int
-    epsilon: float
-    algo: str
-    agent: AgentState
+class ServerFrame(BaseModel):
+    stage: StageType
+    t: float
+    T: float
+    attempt: int
+    random_pct: int
+    agent: Tuple[int, int]
     trail: List[Tuple[int, int]]
-    q_max: List[List[List[float]]]  # shape [2, 8, 8]
-    policy: List[List[List[int]]]   # shape [2, 8, 8]
-    grid: List[str]
-    metrics: Metrics
-    update: Optional[BellmanUpdate] = None
-
-
-class EventMessage(BaseModel):
-    type: Literal["event"] = "event"
-    event: Literal["converged", "shock", "lap_done", "error"]
-    episode: Optional[int] = None
-    t_elapsed: Optional[float] = None
-    row: Optional[int] = None
-    col: Optional[int] = None
-    tile: Optional[str] = None
-    message: Optional[str] = None
-
-
-# Client to Server Commands
-class StartCommand(BaseModel):
-    type: Literal["start"]
-    mode: Literal["demo", "free"] = "demo"
-    algo: Literal["q_learning", "sarsa"] = "q_learning"
-    seed: Optional[int] = 42
-    target_seconds: float = DEFAULT_TARGET_SECONDS
-    shaping: bool = True
-
-
-class EditCommand(BaseModel):
-    type: Literal["edit"]
-    row: int
-    col: int
-    tile: str
-
-
-class SetAlgoCommand(BaseModel):
-    type: Literal["set_algo"]
-    algo: Literal["q_learning", "sarsa"]
-
-
-class SetSpeedCommand(BaseModel):
-    type: Literal["set_speed"]
-    speed: float = 1.0
-
-
-class SimpleCommand(BaseModel):
-    type: Literal["pause", "resume", "reset", "victory_lap"]
+    value: List[List[float]]  # max Q per tile, normalized 0..1
+    best: List[List[int]]     # best action 0..3 per tile
+    steps_history: List[int]
+    result: Optional[ResultData] = None

@@ -4,22 +4,7 @@
 
 @layer base {
   body {
-    @apply bg-[#080c14] text-slate-100 font-sans antialiased overflow-x-hidden;
+    @apply bg-[#F5F2EA] text-[#111111] font-sans antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
-}
-
-/* Custom scrollbar for data tables and logs */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #0f172a;
-}
-::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #475569;
 }

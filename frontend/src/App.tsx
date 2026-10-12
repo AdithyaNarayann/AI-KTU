@@ -1,247 +1,135 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useTrainSocket } from './hooks/useTrainSocket';
-import { DualGridCanvas } from './components/DualGridCanvas';
-import { TilePalette } from './components/TilePalette';
-import { StatusHeader } from './components/StatusHeader';
-import { BellmanPanel } from './components/BellmanPanel';
-import { MetricsCharts } from './components/MetricsCharts';
-import { ControlsBar } from './components/ControlsBar';
-import { TileType, AlgoType } from './types';
-import { Brain } from 'lucide-react';
+import { useEffect, useMemo } from 'react';
+import { useRun } from './hooks/useRun';
+import { Maze } from './components/Maze';
+import { Sparkline } from './components/Sparkline';
+import { ServerFrame } from './types';
 
-export const App: React.FC = () => {
-  const {
-    connected,
-    latestFrame,
-    history,
-    isShocked,
-    isConverged,
-    isReplaying,
-    sendCommand,
-    startRecordedReplay,
-    stopRecordedReplay,
-  } = useTrainSocket();
+function getStageMessage(frame: ServerFrame): string {
+  switch (frame.stage) {
+    case 'idle':
+      return 'Press run. The agent knows nothing about this maze.';
+    case 'exploring':
+      return 'Exploring. Mostly random moves, lots of wall bumps.';
+    case 'learning':
+      return 'Learning. Squares near the goal start to glow.';
+    case 'converging':
+      return 'Almost there. It now follows the brightest squares.';
+    case 'solved':
+      return `Solved in ${frame.result?.steps ?? 28} steps. The shortest possible is ${frame.result?.optimal ?? 28}.`;
+    default:
+      return '';
+  }
+}
 
-  // Local state
-  const [selectedTile, setSelectedTile] = useState<TileType>('#');
-  const [algo, setAlgo] = useState<AlgoType>('q_learning');
-  const [shaping, setShaping] = useState<boolean>(true);
-  const [mode, setMode] = useState<'demo' | 'free'>('demo');
-  const [speed, setSpeed] = useState<number>(1.0);
-  const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [isPaused, setIsPaused] = useState<boolean>(false);
+export function App() {
+  const { frame, run } = useRun();
 
-  // Sync algo from frame if changed on server
-  useEffect(() => {
-    if (latestFrame?.algo && (latestFrame.algo === 'q_learning' || latestFrame.algo === 'sarsa')) {
-      setAlgo(latestFrame.algo as AlgoType);
-    }
-  }, [latestFrame?.algo]);
+  const isRunning = frame.stage === 'exploring' || frame.stage === 'learning' || frame.stage === 'converging';
+  const isSolved = frame.stage === 'solved';
 
-  // Actions
-  const handleStartDemo = useCallback(() => {
-    setIsRunning(true);
-    setIsPaused(false);
-    sendCommand({
-      type: 'start',
-      mode,
-      algo,
-      seed: mode === 'demo' ? 42 : null,
-      target_seconds: 75.0,
-      shaping,
-    });
-  }, [mode, algo, shaping, sendCommand]);
-
-  const handlePauseResume = useCallback(() => {
-    if (isPaused) {
-      setIsPaused(false);
-      sendCommand({ type: 'resume' });
-    } else {
-      setIsPaused(true);
-      sendCommand({ type: 'pause' });
-    }
-  }, [isPaused, sendCommand]);
-
-  const handleReset = useCallback(() => {
-    setIsRunning(false);
-    setIsPaused(false);
-    sendCommand({ type: 'reset' });
-  }, [sendCommand]);
-
-  const handleVictoryLap = useCallback(() => {
-    sendCommand({ type: 'victory_lap' });
-  }, [sendCommand]);
-
-  const handleSetAlgo = useCallback(
-    (newAlgo: AlgoType) => {
-      setAlgo(newAlgo);
-      sendCommand({ type: 'set_algo', algo: newAlgo });
-    },
-    [sendCommand]
-  );
-
-  const handleToggleShaping = useCallback(() => {
-    setShaping((prev) => !prev);
-  }, []);
-
-  const handleToggleMode = useCallback((newMode: 'demo' | 'free') => {
-    setMode(newMode);
-  }, []);
-
-  const handleChangeSpeed = useCallback(
-    (newSpeed: number) => {
-      setSpeed(newSpeed);
-      sendCommand({ type: 'set_speed', speed: newSpeed });
-    },
-    [sendCommand]
-  );
-
-  const handleCellClick = useCallback(
-    (row: number, col: number) => {
-      sendCommand({
-        type: 'edit',
-        row,
-        col,
-        tile: selectedTile,
-      });
-    },
-    [selectedTile, sendCommand]
-  );
-
-  // Keyboard Shortcuts: Space, R, L, 1, 2
+  // Spacebar triggers run when not currently in active training
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is focusing an input
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
-
-      if (e.code === 'Space') {
+      if (e.code === 'Space' && !e.repeat) {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
         e.preventDefault();
-        if (!isRunning) handleStartDemo();
-        else handlePauseResume();
-      } else if (e.code === 'KeyR') {
-        e.preventDefault();
-        handleReset();
-      } else if (e.code === 'KeyL') {
-        e.preventDefault();
-        handleVictoryLap();
-      } else if (e.key === '1') {
-        e.preventDefault();
-        handleSetAlgo('q_learning');
-      } else if (e.key === '2') {
-        e.preventDefault();
-        handleSetAlgo('sarsa');
+        if (!isRunning) {
+          run();
+        }
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isRunning, handleStartDemo, handlePauseResume, handleReset, handleVictoryLap, handleSetAlgo]);
+  }, [isRunning, run]);
+
+  const progressPct = useMemo(() => {
+    if (isSolved) return 100;
+    if (!isRunning || frame.T <= 0) return 0;
+    return Math.min(100, Math.max(0, (frame.t / frame.T) * 100));
+  }, [isRunning, isSolved, frame.t, frame.T]);
+
+  const stageText = getStageMessage(frame);
+
+  const buttonText = isRunning ? 'RUNNING' : isSolved ? 'RUN AGAIN' : 'RUN';
+
+  const handleButtonClick = () => {
+    if (isRunning) return;
+    run();
+  };
 
   return (
-    <div className="min-h-screen bg-[#080c14] text-slate-100 flex flex-col">
-      {/* Top Header */}
-      <header className="border-b border-border bg-[#0b1220]/80 backdrop-blur-md px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-40">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-gradient-to-br from-cyan-500 to-emerald-500 text-slate-950 shadow-md shadow-cyan-950">
-            <Brain className="w-6 h-6 stroke-[2.5]" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-extrabold tracking-tight font-mono text-white">
-                WatchIt<span className="text-cyan-400">Learn</span>
-              </h1>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800 uppercase font-bold">
-                Live RL GridWorld Demo
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 font-mono">
-              University AI Course • Tabular Q-Learning & SARSA in 75s
-            </p>
-          </div>
-        </div>
-
-        {/* Keyboard shortcut hints */}
-        <div className="hidden lg:flex items-center gap-3 text-[11px] font-mono text-slate-400 bg-slate-900/80 px-3 py-1.5 rounded-lg border border-slate-800">
-          <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-200">Space</kbd> Start/Pause
+    <div className="min-h-screen bg-[#F5F2EA] text-[#111111] flex flex-col items-center justify-center p-4 sm:p-8 font-sans selection:bg-[#FF4F00] selection:text-white">
+      <main className="w-full max-w-[560px] flex flex-col gap-6">
+        {/* 1. Header Row */}
+        <header className="flex items-baseline justify-between select-none border-b border-[#D9D4C7] pb-3">
+          <h1 className="text-2xl font-bold tracking-tight text-[#111111] font-sans">
+            WatchItLearn
+          </h1>
+          <span className="font-mono text-xs text-[#111111]/70 tracking-tight">
+            tabular Q-learning
           </span>
-          <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-200">R</kbd> Reset
-          </span>
-          <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-200">L</kbd> Lap
-          </span>
-          <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-200">1</kbd>/<kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-200">2</kbd> Algo
-          </span>
-        </div>
-      </header>
+        </header>
 
-      {/* Main Container */}
-      <main className="flex-1 p-4 sm:p-6 max-w-[1600px] w-full mx-auto space-y-5">
-        {/* Controls Bar */}
-        <ControlsBar
-          isRunning={isRunning}
-          isPaused={isPaused}
-          isReplaying={isReplaying}
-          algo={algo}
-          shaping={shaping}
-          mode={mode}
-          speed={speed}
-          onStartDemo={handleStartDemo}
-          onPauseResume={handlePauseResume}
-          onReset={handleReset}
-          onVictoryLap={handleVictoryLap}
-          onSetAlgo={handleSetAlgo}
-          onToggleShaping={handleToggleShaping}
-          onToggleMode={handleToggleMode}
-          onChangeSpeed={handleChangeSpeed}
-          onReplayRecordedRun={startRecordedReplay}
-          onStopReplay={stopRecordedReplay}
-        />
+        {/* 2. Maze Canvas */}
+        <section className="w-full">
+          <Maze frame={frame} />
+        </section>
 
-        {/* Level Editor Palette */}
-        <TilePalette selectedTile={selectedTile} onSelectTile={setSelectedTile} />
-
-        {/* Core Layout: Left Grids, Right Analytics */}
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-          {/* Left: Dual Grid Canvas (7 cols on large screens) */}
-          <div className="xl:col-span-7 flex flex-col gap-4">
-            <DualGridCanvas
-              frame={latestFrame}
-              selectedTile={selectedTile}
-              onCellClick={handleCellClick}
-              isShocked={isShocked}
-            />
+        {/* 3. Status Row under the maze */}
+        <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-[#111111]">
+          <div className="flex items-center gap-4 font-mono font-medium">
+            <span>Attempt {frame.attempt}</span>
+            <span>Random moves {frame.random_pct}%</span>
           </div>
-
-          {/* Right: Analytics, Bellman Updates, Metrics (5 cols on large screens) */}
-          <div className="xl:col-span-5 flex flex-col gap-4">
-            {/* Giant Timer & Status Header */}
-            <StatusHeader
-              frame={latestFrame}
-              connected={connected}
-              isReplaying={isReplaying}
-              isConverged={isConverged}
-            />
-
-            {/* Live Bellman TD Substitution */}
-            <BellmanPanel update={latestFrame?.update ?? null} />
-
-            {/* Performance Charts */}
-            <MetricsCharts history={history} />
+          <div className="text-left sm:text-right font-sans font-medium text-[13px] text-[#111111]">
+            {stageText}
           </div>
-        </div>
+        </section>
+
+        {/* 4. RUN Button */}
+        <section className="w-full">
+          <button
+            type="button"
+            onClick={handleButtonClick}
+            disabled={isRunning}
+            style={{
+              boxShadow: isRunning ? '2px 2px 0px #111111' : '4px 4px 0px #111111',
+              transform: isRunning ? 'translate(2px, 2px)' : 'none',
+            }}
+            className="w-full h-[56px] relative overflow-hidden bg-[#111111] text-white font-mono font-bold text-sm tracking-wider uppercase transition-transform active:translate-x-1 active:translate-y-1 active:shadow-none disabled:cursor-not-allowed border-2 border-[#111111] select-none"
+          >
+            {/* Progress bar fill driven by t/T */}
+            {isRunning && (
+              <div
+                className="absolute inset-y-0 left-0 bg-[#FF4F00] transition-[width] duration-100 ease-linear"
+                style={{ width: `${progressPct}%` }}
+              />
+            )}
+            <span className="relative z-10 text-white flex items-center justify-center gap-2">
+              {buttonText}
+              {isRunning && (
+                <span className="font-mono text-xs opacity-90">
+                  {Math.round(frame.t)}s / {Math.round(frame.T)}s
+                </span>
+              )}
+            </span>
+          </button>
+        </section>
+
+        {/* 5. Sparkline */}
+        <section className="w-full">
+          <Sparkline data={frame.steps_history} optimal={28} />
+        </section>
+
+        {/* 6. Footer */}
+        <footer className="pt-2 text-center">
+          <p className="text-xs text-[#111111]/70 font-sans leading-relaxed max-w-[500px] mx-auto">
+            The agent starts knowing nothing. After every move it updates a score for that square, so squares closer to the goal glow brighter.
+          </p>
+        </footer>
       </main>
-
-      {/* Footer */}
-      <footer className="border-t border-border bg-[#0b1220] px-6 py-3 text-center text-xs font-mono text-slate-500">
-        <span>WatchItLearn — Built from scratch with pure Python, NumPy, FastAPI & React. Zero Gym. Zero PyTorch.</span>
-      </footer>
     </div>
   );
-};
+}
 
 export default App;

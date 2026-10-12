@@ -1,225 +1,121 @@
-"""Grid world environment with precomputed transition tables and BFS solver."""
+"""Environment with precomputed transition tables over integer state IDs and BFS solver."""
 
 from collections import deque
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional
 import numpy as np
 
 from app.config import (
-    GRID_ROWS,
-    GRID_COLS,
-    NUM_KEY_STATES,
+    MAZE_ROWS,
+    MAZE_COLS,
     NUM_STATES,
     NUM_ACTIONS,
     ACTIONS,
-    DEFAULT_ASCII_LAYOUT,
+    MAZE_ASCII,
     REWARD_STEP,
-    REWARD_LAVA,
     REWARD_GOAL,
-    REWARD_KEY_SHAPING,
 )
 
 
-def encode_state(r: int, c: int, k: int) -> int:
-    """Encode (row, col, has_key) into an integer state ID in [0, 127]."""
-    return (k * 64) + (r * 8) + c
+def encode(r: int, c: int) -> int:
+    """Encode (row, col) into integer state in [0, 120]."""
+    return r * MAZE_COLS + c
 
 
-def decode_state(s: int) -> Tuple[int, int, int]:
-    """Decode integer state ID into (row, col, has_key)."""
-    k = s // 64
-    rem = s % 64
-    r = rem // 8
-    c = rem % 8
-    return r, c, k
+def decode(s: int) -> Tuple[int, int]:
+    """Decode integer state into (row, col)."""
+    return s // MAZE_COLS, s % MAZE_COLS
 
 
-class GridWorld:
-    """Deterministic 8x8 GridWorld with key, door, lava, and precomputed transition tables."""
+class MazeWorld:
+    """Deterministic 11x11 tile maze with precomputed transition tables."""
 
-    def __init__(self, layout: Optional[List[str]] = None, shaping: bool = True):
-        self.shaping = shaping
-        self.grid: List[List[str]] = [
-            list(row) for row in (layout or DEFAULT_ASCII_LAYOUT)
-        ]
-        self.rows = GRID_ROWS
-        self.cols = GRID_COLS
+    def __init__(self, layout: Optional[List[str]] = None):
+        self.grid: List[str] = layout or MAZE_ASCII
+        self.rows = MAZE_ROWS
+        self.cols = MAZE_COLS
 
-        # Precomputed tables: shape (128, 4)
+        self.start_pos: Tuple[int, int] = (1, 1)
+        self.goal_pos: Tuple[int, int] = (9, 9)
+
+        # Locate S and G
+        for r in range(self.rows):
+            for c in range(self.cols):
+                if self.grid[r][c] == "S":
+                    self.start_pos = (r, c)
+                elif self.grid[r][c] == "G":
+                    self.goal_pos = (r, c)
+
+        self.start_state = encode(*self.start_pos)
+        self.goal_state = encode(*self.goal_pos)
+
+        # Precomputed transition tables: shape (121, 4)
         self.next_state = np.zeros((NUM_STATES, NUM_ACTIONS), dtype=np.int32)
         self.reward = np.zeros((NUM_STATES, NUM_ACTIONS), dtype=np.float32)
         self.done = np.zeros((NUM_STATES, NUM_ACTIONS), dtype=bool)
 
-        # Track special positions
-        self.start_pos: Tuple[int, int] = (1, 1)
-        self.goal_pos: Tuple[int, int] = (6, 6)
-        self.key_pos: Optional[Tuple[int, int]] = (5, 1)
-        self.door_pos: Optional[Tuple[int, int]] = (3, 5)
+        self._build_tables()
 
-        self.optimal_len: int = 14
-        self.optimal_path: List[Tuple[int, int]] = []
+        # BFS shortest path
+        self.optimal_len, self.optimal_path = self._bfs()
 
-        self._rebuild_all()
-
-    def _locate_entities(self) -> None:
-        """Scan grid for S, G, K, D."""
-        self.key_pos = None
-        self.door_pos = None
+    def _build_tables(self) -> None:
+        """Precompute next_state[s][a], reward[s][a], done[s][a]."""
         for r in range(self.rows):
             for c in range(self.cols):
+                s = encode(r, c)
                 tile = self.grid[r][c]
-                if tile == "S":
-                    self.start_pos = (r, c)
-                elif tile == "G":
-                    self.goal_pos = (r, c)
-                elif tile == "K":
-                    self.key_pos = (r, c)
-                elif tile == "D":
-                    self.door_pos = (r, c)
 
-    def _rebuild_all(self) -> None:
-        """Update entity locations, transition tables, and BFS shortest path."""
-        self._locate_entities()
-        self._compute_transition_tables()
-        self._compute_bfs()
-
-    def set_shaping(self, shaping: bool) -> None:
-        """Toggle reward shaping and rebuild transition tables."""
-        if self.shaping != shaping:
-            self.shaping = shaping
-            self._compute_transition_tables()
-
-    def _compute_transition_tables(self) -> None:
-        """Precompute next_state[s][a], reward[s][a], and done[s][a] for all s and a."""
-        for s in range(NUM_STATES):
-            r, c, k = decode_state(s)
-            current_tile = self.grid[r][c]
-
-            for a, (dr, dc) in enumerate(ACTIONS):
-                # If current state is an absorbing terminal state (Lava or Goal)
-                if current_tile in ("L", "G"):
-                    self.next_state[s, a] = s
-                    self.reward[s, a] = 0.0
-                    self.done[s, a] = True
+                # Goal is absorbing
+                if (r, c) == self.goal_pos:
+                    for a in range(NUM_ACTIONS):
+                        self.next_state[s, a] = s
+                        self.reward[s, a] = 0.0
+                        self.done[s, a] = True
                     continue
 
-                nr, nc = r + dr, c + dc
+                for a, (dr, dc) in enumerate(ACTIONS):
+                    nr, nc = r + dr, c + dc
 
-                # Boundary check: walking off grid stays in place
-                if not (0 <= nr < self.rows and 0 <= nc < self.cols):
-                    nr, nc = r, c
+                    # Boundary / wall check
+                    if not (0 <= nr < self.rows and 0 <= nc < self.cols) or self.grid[nr][nc] == "#":
+                        # Wall bump: stay in place, waste step
+                        self.next_state[s, a] = s
+                        self.reward[s, a] = REWARD_STEP
+                        self.done[s, a] = False
+                    elif (nr, nc) == self.goal_pos:
+                        # Reached goal: terminal reward +1
+                        self.next_state[s, a] = encode(nr, nc)
+                        self.reward[s, a] = REWARD_GOAL
+                        self.done[s, a] = True
+                    else:
+                        # Normal open tile step
+                        self.next_state[s, a] = encode(nr, nc)
+                        self.reward[s, a] = REWARD_STEP
+                        self.done[s, a] = False
 
-                dest_tile = self.grid[nr][nc]
+    def _bfs(self) -> Tuple[int, List[Tuple[int, int]]]:
+        """Find the BFS shortest path from start to goal."""
+        q = deque([(self.start_pos[0], self.start_pos[1], 0, [self.start_pos])])
+        visited = {self.start_pos}
 
-                if dest_tile == "#":
-                    # Wall: bump and stay in place
-                    self.next_state[s, a] = s
-                    self.reward[s, a] = REWARD_STEP
-                    self.done[s, a] = False
-
-                elif dest_tile == "D" and k == 0:
-                    # Locked door: bump and stay in place
-                    self.next_state[s, a] = s
-                    self.reward[s, a] = REWARD_STEP
-                    self.done[s, a] = False
-
-                elif dest_tile == "L":
-                    # Lava: fatal terminal step
-                    self.next_state[s, a] = encode_state(nr, nc, k)
-                    self.reward[s, a] = REWARD_LAVA
-                    self.done[s, a] = True
-
-                elif dest_tile == "G":
-                    # Goal: successful terminal step
-                    self.next_state[s, a] = encode_state(nr, nc, k)
-                    self.reward[s, a] = REWARD_GOAL
-                    self.done[s, a] = True
-
-                elif dest_tile == "K" and k == 0:
-                    # Key pickup: state changes to k=1
-                    key_bonus = REWARD_KEY_SHAPING if self.shaping else 0.0
-                    self.next_state[s, a] = encode_state(nr, nc, 1)
-                    self.reward[s, a] = REWARD_STEP + key_bonus
-                    self.done[s, a] = False
-
-                else:
-                    # Normal step onto empty, door (with key), key (already held), or start
-                    self.next_state[s, a] = encode_state(nr, nc, k)
-                    self.reward[s, a] = REWARD_STEP
-                    self.done[s, a] = False
-
-    def _compute_bfs(self) -> None:
-        """Find the BFS shortest path over (r, c, has_key) state space."""
-        sr, sc = self.start_pos
-        start_state = (sr, sc, 0)
-
-        # queue elements: (r, c, k, length, path)
-        queue: deque = deque([(sr, sc, 0, 0, [(sr, sc)])])
-        visited = {start_state}
-
-        best_len: Optional[int] = None
-        best_path: List[Tuple[int, int]] = []
-
-        while queue:
-            r, c, k, dist, path = queue.popleft()
-
+        while q:
+            r, c, dist, path = q.popleft()
             if (r, c) == self.goal_pos:
-                best_len = dist
-                best_path = path
-                break
+                return dist, path
 
             for dr, dc in ACTIONS:
                 nr, nc = r + dr, c + dc
-                if not (0 <= nr < self.rows and 0 <= nc < self.cols):
-                    continue
+                if 0 <= nr < self.rows and 0 <= nc < self.cols:
+                    if self.grid[nr][nc] != "#" and (nr, nc) not in visited:
+                        visited.add((nr, nc))
+                        q.append((nr, nc, dist + 1, path + [(nr, nc)]))
 
-                tile = self.grid[nr][nc]
-                if tile in ("#", "L"):
-                    continue
-                if tile == "D" and k == 0:
-                    continue
-
-                nk = 1 if (k == 1 or tile == "K") else 0
-                next_node = (nr, nc, nk)
-
-                if next_node not in visited:
-                    visited.add(next_node)
-                    queue.append((nr, nc, nk, dist + 1, path + [(nr, nc)]))
-
-        if best_len is not None:
-            self.optimal_len = best_len
-            self.optimal_path = best_path
-        else:
-            # If no path exists (e.g. user blocked goal completely with walls)
-            self.optimal_len = -1
-            self.optimal_path = []
-
-    def edit_tile(self, r: int, c: int, tile: str) -> None:
-        """Edit a grid tile and immediately update transition tables and BFS."""
-        if not (0 <= r < self.rows and 0 <= c < self.cols):
-            return
-        if tile not in (".", "#", "L", "K", "D", "S", "G"):
-            return
-
-        # If changing start or goal, clear old start/goal tile to '.'
-        if tile == "S":
-            sr, sc = self.start_pos
-            self.grid[sr][sc] = "."
-        elif tile == "G":
-            gr, gc = self.goal_pos
-            self.grid[gr][gc] = "."
-
-        self.grid[r][c] = tile
-        self._rebuild_all()
-
-    def get_ascii_grid(self) -> List[str]:
-        """Return grid rows as list of strings."""
-        return ["".join(row) for row in self.grid]
+        return -1, []
 
     def reset(self) -> int:
-        """Return the start state ID."""
-        sr, sc = self.start_pos
-        return encode_state(sr, sc, 0)
+        """Return the start state integer ID."""
+        return self.start_state
 
     def step(self, s: int, a: int) -> Tuple[int, float, bool]:
-        """Execute action a in state s using precomputed tables."""
+        """Execute action a in state s via table lookup."""
         return int(self.next_state[s, a]), float(self.reward[s, a]), bool(self.done[s, a])
