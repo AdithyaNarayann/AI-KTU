@@ -1,0 +1,1 @@
+"""WatchItLearn application package."""
