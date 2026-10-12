@@ -1,27 +1,49 @@
-import { useRef, useEffect, FC } from 'react';
+import { useRef, useEffect, useMemo, FC } from 'react';
 import { ServerFrame } from '../types';
 
-const MAZE_GRID = [
+const DEFAULT_GRID = [
   '###########',
   '#S....#...#',
   '#.#####.#.#',
+  '#.#...#.#.#',
+  '#.#.#.#.#.#',
   '#.#.#...#.#',
   '#.#.#.#.#.#',
-  '#.#...#.#.#',
-  '#.#####.#.#',
-  '#.......#.#',
+  '#...#.###.#',
   '#########.#',
   '#........G#',
   '###########',
 ];
 
-const OPTIMAL_PATH: [number, number][] = [
-  [1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [6, 1], [7, 1],
-  [7, 2], [7, 3], [7, 4], [7, 5], [7, 6], [7, 7],
-  [6, 7], [5, 7], [4, 7], [3, 7], [2, 7], [1, 7],
-  [1, 8], [1, 9],
-  [2, 9], [3, 9], [4, 9], [5, 9], [6, 9], [7, 9], [8, 9], [9, 9]
-];
+function computeBfsPath(grid: string[]): [number, number][] {
+  let start: [number, number] = [1, 1];
+  let goal: [number, number] = [9, 9];
+  for (let r = 0; r < 11; r++) {
+    for (let c = 0; c < 11; c++) {
+      if (grid[r]?.[c] === 'S') start = [r, c];
+      if (grid[r]?.[c] === 'G') goal = [r, c];
+    }
+  }
+  const q: [number, number, [number, number][]][] = [[start[0], start[1], [start]]];
+  const visited = new Set<string>([`${start[0]},${start[1]}`]);
+  while (q.length > 0) {
+    const [r, c, path] = q.shift()!;
+    if (r === goal[0] && c === goal[1]) return path;
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr;
+      const nc = c + dc;
+      if (nr >= 0 && nr < 11 && nc >= 0 && nc < 11 && grid[nr]?.[nc] !== '#') {
+        const key = `${nr},${nc}`;
+        if (!visited.has(key)) {
+          visited.add(key);
+          q.push([nr, nc, [...path, [nr, nc]]]);
+        }
+      }
+    }
+  }
+  return [];
+}
 
 interface MazeProps {
   frame: ServerFrame;
@@ -30,6 +52,14 @@ interface MazeProps {
 export const Maze: FC<MazeProps> = ({ frame }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const solvedTimeRef = useRef<number | null>(null);
+
+  const grid = useMemo(() => {
+    return frame.grid && frame.grid.length === 11 ? frame.grid : DEFAULT_GRID;
+  }, [frame.grid]);
+
+  const optimalPath = useMemo(() => {
+    return computeBfsPath(grid);
+  }, [grid]);
 
   useEffect(() => {
     if (frame.stage === 'solved' && solvedTimeRef.current === null) {
@@ -67,7 +97,7 @@ export const Maze: FC<MazeProps> = ({ frame }) => {
         for (let c = 0; c < 11; c++) {
           const x = c * tileSize;
           const y = r * tileSize;
-          const char = MAZE_GRID[r][c];
+          const char = grid[r]?.[c] ?? '#';
 
           if (char === '#') {
             ctx.fillStyle = '#111111';
@@ -94,27 +124,33 @@ export const Maze: FC<MazeProps> = ({ frame }) => {
       }
 
       // 2. Start marker 'S'
-      const startX = 1 * tileSize + tileSize / 2;
-      const startY = 1 * tileSize + tileSize / 2;
-      ctx.fillStyle = '#111111';
-      ctx.font = `700 ${Math.round(tileSize * 0.42)}px "Space Grotesk", sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('S', startX, startY);
+      for (let r = 0; r < 11; r++) {
+        for (let c = 0; c < 11; c++) {
+          if (grid[r]?.[c] === 'S') {
+            const sx = c * tileSize + tileSize / 2;
+            const sy = r * tileSize + tileSize / 2;
+            ctx.fillStyle = '#111111';
+            ctx.font = `700 ${Math.round(tileSize * 0.42)}px "Space Grotesk", sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('S', sx, sy);
+          } else if (grid[r]?.[c] === 'G') {
+            // 3. Goal marker: bordered square with filled inner square
+            const gx = c * tileSize;
+            const gy = r * tileSize;
+            const outerPad = tileSize * 0.2;
+            const outerSize = tileSize * 0.6;
+            ctx.strokeStyle = '#111111';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(gx + outerPad, gy + outerPad, outerSize, outerSize);
 
-      // 3. Goal marker: bordered square with filled inner square
-      const goalX = 9 * tileSize;
-      const goalY = 9 * tileSize;
-      const outerPad = tileSize * 0.2;
-      const outerSize = tileSize * 0.6;
-      ctx.strokeStyle = '#111111';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(goalX + outerPad, goalY + outerPad, outerSize, outerSize);
-
-      const innerPad = tileSize * 0.35;
-      const innerSize = tileSize * 0.3;
-      ctx.fillStyle = '#111111';
-      ctx.fillRect(goalX + innerPad, goalY + innerPad, innerSize, innerSize);
+            const innerPad = tileSize * 0.35;
+            const innerSize = tileSize * 0.3;
+            ctx.fillStyle = '#111111';
+            ctx.fillRect(gx + innerPad, gy + innerPad, innerSize, innerSize);
+          }
+        }
+      }
 
       // 4. Agent Trail (last 30 positions as fading accent squares)
       if (frame.trail && frame.trail.length > 0) {
@@ -146,11 +182,11 @@ export const Maze: FC<MazeProps> = ({ frame }) => {
       }
 
       // 6. Solved: animated 3px ink line along optimal path
-      if (frame.stage === 'solved' && solvedTimeRef.current !== null) {
+      if (frame.stage === 'solved' && solvedTimeRef.current !== null && optimalPath.length > 0) {
         const elapsed = performance.now() - solvedTimeRef.current;
         const duration = 1200; // 1.2s sweep
         const progress = Math.min(elapsed / duration, 1.0);
-        const pointsCount = Math.max(1, Math.floor(progress * OPTIMAL_PATH.length));
+        const pointsCount = Math.max(1, Math.floor(progress * optimalPath.length));
 
         ctx.strokeStyle = '#111111';
         ctx.lineWidth = 3;
@@ -158,7 +194,7 @@ export const Maze: FC<MazeProps> = ({ frame }) => {
         ctx.lineJoin = 'miter';
         ctx.beginPath();
         for (let i = 0; i < pointsCount; i++) {
-          const [pr, pc] = OPTIMAL_PATH[i];
+          const [pr, pc] = optimalPath[i];
           const px = pc * tileSize + tileSize / 2;
           const py = pr * tileSize + tileSize / 2;
           if (i === 0) ctx.moveTo(px, py);
@@ -166,7 +202,6 @@ export const Maze: FC<MazeProps> = ({ frame }) => {
         }
         ctx.stroke();
 
-        // Continue animating until finished
         if (progress < 1.0) {
           animId = requestAnimationFrame(render);
         }
@@ -180,10 +215,10 @@ export const Maze: FC<MazeProps> = ({ frame }) => {
     return () => {
       if (animId) cancelAnimationFrame(animId);
     };
-  }, [frame]);
+  }, [frame, grid, optimalPath]);
 
   return (
-    <div className="w-full aspect-square bg-[#F5F2EA] border-2 border-[#111111] overflow-hidden">
+    <div className="w-full aspect-square bg-[#F5F2EA] border-2 border-[#111111] overflow-hidden shadow-[3px_3px_0px_#111111]">
       <canvas
         ref={canvasRef}
         className="w-full h-full block"

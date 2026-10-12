@@ -56,6 +56,7 @@ async def health():
 
 @app.get("/api/maze")
 async def get_maze():
+    from app.config import MAZE_PRESETS, MAZE_PRESET_NAMES
     return {
         "grid": env.grid,
         "rows": env.rows,
@@ -64,7 +65,19 @@ async def get_maze():
         "goal": env.goal_pos,
         "optimal_len": env.optimal_len,
         "optimal_path": env.optimal_path,
+        "presets": [
+            {"index": i, "name": name, "grid": p}
+            for i, (name, p) in enumerate(zip(MAZE_PRESET_NAMES, MAZE_PRESETS))
+        ],
+        "active_index": trainer.maze_index,
     }
+
+
+@app.post("/api/maze")
+async def post_maze(payload: Dict[str, Any]):
+    idx = payload.get("index", 0)
+    await trainer.set_maze(idx)
+    return {"status": "ok", "active_index": trainer.maze_index}
 
 
 @app.get("/api/recorded-run")
@@ -101,9 +114,16 @@ async def ws_train(websocket: WebSocket):
             cmd_type = cmd.get("type", "")
 
             if cmd_type == "run":
-                await trainer.run(seed=42)
+                speed = cmd.get("speed") or cmd.get("target_seconds")
+                await trainer.run(seed=42, target_seconds=speed)
             elif cmd_type == "reset":
                 await trainer.reset()
+            elif cmd_type == "set_maze":
+                idx = cmd.get("index", 0)
+                await trainer.set_maze(idx)
+            elif cmd_type == "set_speed":
+                speed = cmd.get("speed") or cmd.get("target_seconds", 40.0)
+                await trainer.set_speed(speed)
 
     except WebSocketDisconnect:
         active_connections.discard(websocket)

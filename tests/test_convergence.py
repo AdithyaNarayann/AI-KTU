@@ -113,7 +113,7 @@ def test_20_seeds_convergence_and_throughput():
     converged_count = 0
 
     print("\n" + "=" * 65)
-    print("CONVERGENCE BENCHMARK: 20 SEEDS (Target T = 40.0s, BFS = 28)")
+    print("CONVERGENCE BENCHMARK: 20 SEEDS (Target T = 40.0s, BFS = 32)")
     print("=" * 65)
     print(f"{'Seed':<6} | {'Status':<12} | {'Attempts':<10} | {'Time to Converge':<16}")
     print("-" * 65)

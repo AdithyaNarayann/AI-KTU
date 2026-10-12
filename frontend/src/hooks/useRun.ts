@@ -13,6 +13,23 @@ const INITIAL_FRAME: ServerFrame = {
   best: Array(11).fill(0).map(() => Array(11).fill(0)),
   steps_history: [],
   result: null,
+  best_steps: null,
+  total_transitions: 0,
+  optimal_steps: 32,
+  maze_index: 0,
+  grid: [
+    "###########",
+    "#S....#...#",
+    "#.#####.#.#",
+    "#.#...#.#.#",
+    "#.#.#.#.#.#",
+    "#.#.#...#.#",
+    "#.#.#.#.#.#",
+    "#...#.###.#",
+    "#########.#",
+    "#........G#",
+    "###########",
+  ],
 };
 
 export function useRun() {
@@ -112,8 +129,19 @@ export function useRun() {
     }
   }, [isReplayMode, startReplay]);
 
-  const run = useCallback(() => send({ type: 'run' }), [send]);
+  const run = useCallback((speed?: number | string) => {
+    send(speed !== undefined ? { type: 'run', speed } : { type: 'run' });
+  }, [send]);
+
   const reset = useCallback(() => send({ type: 'reset' }), [send]);
 
-  return { frame, connected, run, reset, isReplayMode };
+  const setMaze = useCallback((index: number) => {
+    send({ type: 'set_maze', index });
+  }, [send]);
+
+  const setSpeed = useCallback((speed: number | string) => {
+    send({ type: 'set_speed', speed });
+  }, [send]);
+
+  return { frame, connected, run, reset, setMaze, setSpeed, isReplayMode };
 }

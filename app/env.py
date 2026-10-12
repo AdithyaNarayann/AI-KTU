@@ -119,3 +119,17 @@ class MazeWorld:
     def step(self, s: int, a: int) -> Tuple[int, float, bool]:
         """Execute action a in state s via table lookup."""
         return int(self.next_state[s, a]), float(self.reward[s, a]), bool(self.done[s, a])
+
+    def set_layout(self, layout: List[str]) -> None:
+        """Update grid layout and recompute tables and BFS optimum."""
+        self.grid = list(layout)
+        for r in range(self.rows):
+            for c in range(self.cols):
+                if self.grid[r][c] == "S":
+                    self.start_pos = (r, c)
+                elif self.grid[r][c] == "G":
+                    self.goal_pos = (r, c)
+        self.start_state = encode(*self.start_pos)
+        self.goal_state = encode(*self.goal_pos)
+        self._build_tables()
+        self.optimal_len, self.optimal_path = self._bfs()

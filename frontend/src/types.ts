@@ -17,9 +17,25 @@ export interface ServerFrame {
   best: number[][];
   steps_history: number[];
   result?: ResultData | null;
+  best_steps?: number | null;
+  total_transitions?: number;
+  optimal_steps?: number;
+  maze_index?: number;
+  grid?: string[];
+  speed_mode?: string;
 }
 
-export type ClientCommand = { type: 'run' } | { type: 'reset' };
+export type ClientCommand =
+  | { type: 'run'; speed?: number | string }
+  | { type: 'reset' }
+  | { type: 'set_maze'; index: number }
+  | { type: 'set_speed'; speed: number | string };
+
+export interface MazePreset {
+  index: number;
+  name: string;
+  grid: string[];
+}
 
 export interface MazeInfo {
   grid: string[];
@@ -29,4 +45,6 @@ export interface MazeInfo {
   goal: [number, number];
   optimal_len: number;
   optimal_path: [number, number][];
+  presets?: MazePreset[];
+  active_index?: number;
 }

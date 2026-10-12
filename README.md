@@ -1,17 +1,16 @@
 # WatchItLearn
 
-A single-page, live reinforcement learning demonstration where an agent explores a maze from scratch and discovers the optimal 28-step shortest path to the goal in under 40 seconds.
+A single-page, live reinforcement learning demonstration where an agent explores a maze from scratch and discovers the optimal shortest path to the goal in the browser. Fits completely on a single unscrollable screen.
 
 ---
 
-### What Evaluators See (In 6 Lines)
+### Features
 
-1. **Starts Knowing Nothing**: The agent begins with zero knowledge of the maze layout or the goal location.
-2. **Phase 1 (Watch It Flail)**: The audience watches the first few attempts step-by-step as the agent stumbles randomly and bumps into walls.
-3. **Phase 2 (Turbo Learning)**: Training shifts into high gear, simulating hundreds of attempts per second as value ripples outward from the goal.
-4. **Heatmap Glow**: Maze squares transition from neutral paper to an orange glow; brighter squares indicate paths leading closer to the goal.
-5. **Phase 3 (Optimal Path)**: Once convergence is mathematically confirmed across repeated rollouts, the agent smoothly walks the exact 28-step shortest path.
-6. **No Black Boxes**: Built completely from scratch with pure Python and NumPy—no Gym, no PyTorch, no hidden tricks.
+1. **Single Unscrollable Page**: Fits seamlessly on any screen with the Maze on the left and controls, live metrics, and progress on the right.
+2. **Switchable / Random Mazes**: Select between curated presets on command (`1: Labyrinth`, `2: Classic`, `3: Zig-Zag`, or `🎲 Shuffle`).
+3. **Customizable Learning Speed**: Toggle between `Step-by-Step` (100 steps/sec, watch every single move live), `Normal (40s)`, and `Fast (15s)`.
+4. **Live Data Metrics**: Shows Optimal Path length, Shortest Run achieved, Cumulative Experience (transitions evaluated), and Exploration ($\epsilon$).
+5. **No Black Boxes**: Built completely from scratch with pure Python and NumPy—no Gym, no PyTorch, precomputed integer transition tables executing > 2,000 attempts/second.
 
 ---
 
@@ -26,34 +25,32 @@ $$Q(s, a) \leftarrow Q(s, a) + \alpha \Big[ r + \gamma \max_{a'} Q(s', a') - Q(s
 - **$r$ (Immediate Reward)**: $-0.01$ for each step (penalizing delay/wall bumps) and $+1.0$ upon reaching the goal.
 - **$\gamma$ (Discount Factor = $0.97$)**: How much the agent values future rewards compared to immediate outcomes.
 - **$\max_{a'} Q(s', a')$**: The highest estimated score achievable from the next square $s'$.
-- **$\epsilon$ (Exploration Rate)**: Time-annealed from $1.0$ down to $0.02$ across the 40-second training window.
+- **$\epsilon$ (Exploration Rate)**: Time-annealed from $1.0$ down to $0.02$ across the training window.
 
 ---
 
-### Hand-Verified 11×11 Maze Layout
+### Maze Presets
 
-- **Start**: `(1, 1)` (top-left, marked `S`)
-- **Goal**: `(9, 9)` (bottom-right, marked `G`)
-- **Shortest BFS Path**: Exactly **28 steps**
-- **Tempting Wrong Turn**: Heading east at `(1, 1)` into a 4-tile dead end `(1, 2)..(1, 5)`
-- **Dead Ends**: 3 dead-end branches designed to challenge purely random exploration
+- **1: Labyrinth (32 steps)**: Serpentine interior staircase with 8 corners and 4 dead-end traps.
+- **2: Classic (28 steps)**: Perimeter route with a 4-tile dead-end trap immediately right of the start.
+- **3: Zig-Zag (32 steps)**: Left-side double S-chicane with 4 dead ends.
 
 ```
 Row 0:  ###########
 Row 1:  #S....#...#   <- (1,1) to (1,5) is a tempting dead-end trap
 Row 2:  #.#####.#.#   <- (2,1) downwards begins the true route
-Row 3:  #.#.#...#.#
+Row 3:  #.#...#.#.#   <- (3,3) to (3,5) interior chicane
 Row 4:  #.#.#.#.#.#
-Row 5:  #.#...#.#.#
-Row 6:  #.#####.#.#
-Row 7:  #.......#.#
+Row 5:  #.#.#...#.#   <- (5,5) to (5,7) chicane
+Row 6:  #.#.#.#.#.#
+Row 7:  #...#.###.#   <- (7,1) to (7,3) lower turn, wall blocks straight route
 Row 8:  #########.#
 Row 9:  #........G#   <- Goal G at (9,9)
 Row 10: ###########
 ```
 
-Optimal 28-step trajectory:
-$$(1,1) \xrightarrow{6\downarrow} (7,1) \xrightarrow{6\rightarrow} (7,7) \xrightarrow{6\uparrow} (1,7) \xrightarrow{2\rightarrow} (1,9) \xrightarrow{8\downarrow} (9,9) = 28\text{ steps}$$
+Optimal 32-step trajectory:
+$$(1,1) \xrightarrow{6\downarrow} (7,1) \xrightarrow{2\rightarrow} (7,3) \xrightarrow{4\uparrow} (3,3) \xrightarrow{2\rightarrow} (3,5) \xrightarrow{2\downarrow} (5,5) \xrightarrow{2\rightarrow} (5,7) \xrightarrow{4\uparrow} (1,7) \xrightarrow{2\rightarrow} (1,9) \xrightarrow{8\downarrow} (9,9) = 32\text{ steps}$$
 
 ---
 
@@ -101,11 +98,11 @@ pytest -s tests/
 
 **Verified Test Output**:
 ```
-CONVERGENCE BENCHMARK: 20 SEEDS (Target T = 40.0s, BFS = 28)
+CONVERGENCE BENCHMARK: 20 SEEDS (Target T = 40.0s, BFS = 32)
 Seed   | Status       | Attempts   | Time to Converge
-0..19  | CONVERGED    | 100 - 125  | 5.3s - 5.4s
+0..19  | CONVERGED    | 125 - 175  | 5.4s - 5.6s
 Summary: 20 / 20 seeds converged within 40.0s.
-Loop Throughput: 4,000 attempts completed in 1.75s (2,291.9 attempts/sec).
+Loop Throughput: 4,000 attempts completed in 1.83s (2,185.0 attempts/sec).
 ```
 
 ---

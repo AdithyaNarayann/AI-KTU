@@ -48,6 +48,11 @@ class Trainer:
         self.is_solved: bool = False
         self.final_result: Optional[Dict[str, int]] = None
 
+        self.maze_index: int = 0
+        self.best_steps: Optional[int] = None
+        self.total_transitions: int = 0
+        self.speed_mode: str = "normal"  # "normal" | "fast" | "step"
+
         self._loop_task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
 
@@ -62,7 +67,10 @@ class Trainer:
                 pass
 
     def compute_epsilon(self) -> float:
-        """Linear time-annealed epsilon schedule."""
+        """Linear time-annealed or attempt-annealed epsilon schedule."""
+        if self.speed_mode == "step":
+            eps = 1.0 - (self.attempt / 60.0) * (EPSILON_START - EPSILON_FLOOR)
+            return float(max(EPSILON_FLOOR, min(EPSILON_START, eps)))
         t_explore = self.T * EXPLORE_RATIO
         if t_explore <= 0 or self.t >= t_explore:
             return EPSILON_FLOOR
@@ -112,6 +120,12 @@ class Trainer:
             "value": self.agent.get_normalized_values(),
             "best": self.agent.get_best_actions(),
             "steps_history": self._get_downsampled_history(),
+            "best_steps": self.best_steps,
+            "total_transitions": self.total_transitions,
+            "optimal_steps": self.env.optimal_len,
+            "maze_index": self.maze_index,
+            "grid": self.env.grid,
+            "speed_mode": self.speed_mode,
         }
         if self.is_solved and self.final_result:
             frame["result"] = self.final_result
@@ -163,9 +177,16 @@ class Trainer:
 
         return False
 
-    async def run(self, seed: Optional[int] = 42) -> None:
+    async def run(self, seed: Optional[int] = 42, target_seconds: Optional[Any] = None) -> None:
         """Start a new learning run."""
         await self.reset()
+        if target_seconds is not None:
+            if str(target_seconds).lower() in ("step", "step-by-step", "0", "-1"):
+                self.speed_mode = "step"
+                self.T = 60.0
+            else:
+                self.speed_mode = "normal"
+                self.T = max(3.0, float(target_seconds))
 
         self.stage = "exploring"
         self.t = 0.0
@@ -199,6 +220,8 @@ class Trainer:
         self.consecutive_converged = 0
         self.is_solved = False
         self.final_result = None
+        self.best_steps = None
+        self.total_transitions = 0
         self.agent.reset_table()
 
         # Emit idle frame
@@ -207,108 +230,186 @@ class Trainer:
         frame["stage"] = "idle"
         await self.broadcast(frame)
 
+    async def set_maze(self, index: int) -> None:
+        """Switch maze layout preset, reset agent, and broadcast initial frame."""
+        from app.config import MAZE_PRESETS
+        index = max(0, min(len(MAZE_PRESETS) - 1, int(index)))
+        await self.reset()
+        self.maze_index = index
+        self.env.set_layout(MAZE_PRESETS[index])
+        self.agent.reset_table()
+        self.best_steps = None
+        self.total_transitions = 0
+        sr, sc = self.env.start_pos
+        init_frame = self.build_frame(sr, sc, [(sr, sc)])
+        init_frame["stage"] = "idle"
+        await self.broadcast(init_frame)
+
+    async def set_speed(self, target_seconds: Any) -> None:
+        """Set target training time budget T or step mode."""
+        if str(target_seconds).lower() in ("step", "step-by-step", "0", "-1"):
+            self.speed_mode = "step"
+            self.T = 60.0
+        else:
+            self.speed_mode = "normal"
+            self.T = max(3.0, float(target_seconds))
+
     async def _train_loop(self) -> None:
-        """Master training loop with Phase 1 flailing, Phase 2 turbo, and Phase 3 final walk."""
+        """Master training loop with Step-by-Step mode or Phase 1 flailing + Phase 2 turbo."""
         try:
             start_wall = time.monotonic()
 
-            # ---------------------------------------------------------------
-            # Phase 1: Visible Flailing (Attempts 1 to 5)
-            # ---------------------------------------------------------------
-            for att_idx in range(1, PHASE1_MAX_ATTEMPTS + 1):
-                if self._stop_event.is_set():
-                    return
+            if self.speed_mode == "step":
+                # -----------------------------------------------------------
+                # Step-by-Step Mode: 100 steps per second, watch every move!
+                # -----------------------------------------------------------
+                step_dt = 0.01  # 10ms = 100 steps/sec
 
-                self.attempt += 1
-                s = self.env.reset()
-                r, c = decode(s)
-                trail = [(r, c)]
-                steps = 0
-                step_dt = 1.0 / PHASE1_STEPS_PER_SEC
-
-                # Limit visible flailing per early attempt to ~15-20 steps so it takes ~5-7s total
-                max_visible_steps = 20
-
-                while steps < max_visible_steps and not self._stop_event.is_set():
-                    self.t = time.monotonic() - start_wall
-                    eps = self.compute_epsilon()
-                    a = self.agent.select_action(s, eps)
-                    next_s, reward, done = self.env.step(s, a)
-                    steps += 1
-
-                    self.agent.update(s, a, reward, next_s, done)
-                    nr, nc = decode(next_s)
-                    trail.append((nr, nc))
-
-                    frame = self.build_frame(nr, nc, trail)
-                    await self.broadcast(frame)
-
-                    s = next_s
-                    if done:
-                        break
-
-                    await asyncio.sleep(step_dt)
-
-                self.steps_history.append(steps)
-
-            # ---------------------------------------------------------------
-            # Phase 2: Turbo Learning (25 Hz Frames)
-            # ---------------------------------------------------------------
-            target_frame_dt = 1.0 / TURBO_FPS  # 0.04s
-
-            while not self._stop_event.is_set() and not self.is_solved:
-                frame_start = time.monotonic()
-                self.t = frame_start - start_wall
-
-                # Timeout guard (1.5 * T = 60s)
-                if self.t >= MAX_TIMEOUT_SECONDS:
-                    await self.broadcast({"type": "error", "message": "Failed to converge within timeout."})
-                    self.stage = "idle"
-                    return
-
-                # Ramp batch size from 2 up to 200 based on progress
-                prog = min(1.0, max(0.0, self.t / self.T))
-                batch_size = int(2 + 150 * prog)
-
-                latest_trail: List[Tuple[int, int]] = []
-                last_r, last_c = self.env.start_pos
-                eps = self.compute_epsilon()
-
-                for _ in range(batch_size):
+                while not self._stop_event.is_set() and not self.is_solved:
                     self.attempt += 1
                     s = self.env.reset()
-                    trail_attempt = [decode(s)]
+                    r, c = decode(s)
+                    trail = [(r, c)]
                     steps = 0
+                    eps = self.compute_epsilon()
 
-                    for _ in range(MAX_ATTEMPT_STEPS):
+                    while steps < MAX_ATTEMPT_STEPS and not self._stop_event.is_set():
+                        self.t = time.monotonic() - start_wall
                         a = self.agent.select_action(s, eps)
                         next_s, reward, done = self.env.step(s, a)
                         steps += 1
+                        self.total_transitions += 1
+
                         self.agent.update(s, a, reward, next_s, done)
-                        trail_attempt.append(decode(next_s))
+                        nr, nc = decode(next_s)
+                        trail.append((nr, nc))
+                        if len(trail) > 30:
+                            trail.pop(0)
+
+                        frame = self.build_frame(nr, nc, trail)
+                        await self.broadcast(frame)
+
                         s = next_s
                         if done:
+                            if next_s == self.env.goal_state:
+                                if self.best_steps is None or steps < self.best_steps:
+                                    self.best_steps = steps
                             break
 
-                    self.steps_history.append(steps)
-                    latest_trail = trail_attempt
-                    last_r, last_c = trail_attempt[-1]
+                        await asyncio.sleep(step_dt)
 
-                    # Convergence check every 25 attempts
-                    if self.attempt % CONVERGENCE_CHECK_INTERVAL == 0:
+                    self.steps_history.append(steps)
+
+                    # Convergence check after attempt 15
+                    if self.attempt >= 15 and self.attempt % 5 == 0:
                         if self.run_convergence_check():
                             break
 
-                # Broadcast 25 Hz frame
-                frame = self.build_frame(last_r, last_c, latest_trail)
-                await self.broadcast(frame)
+            else:
+                # -----------------------------------------------------------
+                # Phase 1: Visible Flailing (Attempts 1 to 5)
+                # -----------------------------------------------------------
+                for att_idx in range(1, PHASE1_MAX_ATTEMPTS + 1):
+                    if self._stop_event.is_set():
+                        return
 
-                if self.is_solved:
-                    break
+                    self.attempt += 1
+                    s = self.env.reset()
+                    r, c = decode(s)
+                    trail = [(r, c)]
+                    steps = 0
+                    step_dt = 1.0 / PHASE1_STEPS_PER_SEC
 
-                duration = time.monotonic() - frame_start
-                sleep_time = max(0.001, target_frame_dt - duration)
-                await asyncio.sleep(sleep_time)
+                    max_visible_steps = 20
+
+                    while steps < max_visible_steps and not self._stop_event.is_set():
+                        self.t = time.monotonic() - start_wall
+                        eps = self.compute_epsilon()
+                        a = self.agent.select_action(s, eps)
+                        next_s, reward, done = self.env.step(s, a)
+                        steps += 1
+                        self.total_transitions += 1
+
+                        self.agent.update(s, a, reward, next_s, done)
+                        nr, nc = decode(next_s)
+                        trail.append((nr, nc))
+
+                        frame = self.build_frame(nr, nc, trail)
+                        await self.broadcast(frame)
+
+                        s = next_s
+                        if done:
+                            if next_s == self.env.goal_state:
+                                if self.best_steps is None or steps < self.best_steps:
+                                    self.best_steps = steps
+                            break
+
+                        await asyncio.sleep(step_dt)
+
+                    self.steps_history.append(steps)
+
+                # -----------------------------------------------------------
+                # Phase 2: Turbo Learning (25 Hz Frames)
+                # -----------------------------------------------------------
+                target_frame_dt = 1.0 / TURBO_FPS  # 0.04s
+
+                while not self._stop_event.is_set() and not self.is_solved:
+                    frame_start = time.monotonic()
+                    self.t = frame_start - start_wall
+
+                    # Timeout guard (1.5 * T = 60s)
+                    if self.t >= MAX_TIMEOUT_SECONDS:
+                        await self.broadcast({"type": "error", "message": "Failed to converge within timeout."})
+                        self.stage = "idle"
+                        return
+
+                    # Ramp batch size from 2 up to 200 based on progress
+                    prog = min(1.0, max(0.0, self.t / self.T))
+                    batch_size = int(2 + 150 * prog)
+
+                    latest_trail: List[Tuple[int, int]] = []
+                    last_r, last_c = self.env.start_pos
+                    eps = self.compute_epsilon()
+
+                    for _ in range(batch_size):
+                        self.attempt += 1
+                        s = self.env.reset()
+                        trail_attempt = [decode(s)]
+                        steps = 0
+
+                        for _ in range(MAX_ATTEMPT_STEPS):
+                            a = self.agent.select_action(s, eps)
+                            next_s, reward, done = self.env.step(s, a)
+                            steps += 1
+                            self.total_transitions += 1
+                            self.agent.update(s, a, reward, next_s, done)
+                            trail_attempt.append(decode(next_s))
+                            s = next_s
+                            if done:
+                                if next_s == self.env.goal_state:
+                                    if self.best_steps is None or steps < self.best_steps:
+                                        self.best_steps = steps
+                                break
+
+                        self.steps_history.append(steps)
+                        latest_trail = trail_attempt
+                        last_r, last_c = trail_attempt[-1]
+
+                        # Convergence check every 25 attempts
+                        if self.attempt % CONVERGENCE_CHECK_INTERVAL == 0:
+                            if self.run_convergence_check():
+                                break
+
+                    # Broadcast 25 Hz frame
+                    frame = self.build_frame(last_r, last_c, latest_trail)
+                    await self.broadcast(frame)
+
+                    if self.is_solved:
+                        break
+
+                    duration = time.monotonic() - frame_start
+                    sleep_time = max(0.001, target_frame_dt - duration)
+                    await asyncio.sleep(sleep_time)
 
             # ---------------------------------------------------------------
             # Phase 3: Final Solved Walk (~12 steps per second)
