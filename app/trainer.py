@@ -51,6 +51,7 @@ class Trainer:
         self.final_result: Optional[Dict[str, int]] = None
 
         self.maze_index: int = 0
+        self.current_seed: int = 42
         self.best_steps: Optional[int] = None
         self.total_transitions: int = 0
         self.speed_mode: str = "normal"  # "normal" | "fast" | "step"
@@ -95,7 +96,7 @@ class Trainer:
             episode_log=self.episode_log,
             visit_counts=self.visit_counts,
             maze_index=self.maze_index,
-            seed=42,  # default seed
+            seed=self.current_seed,
             speed_mode=self.speed_mode,
         )
         try:
@@ -244,9 +245,14 @@ class Trainer:
         self.final_result = None
         self.episode_log = []
         self.visit_counts = np.zeros(NUM_STATES, dtype=np.int32)
+        self.frozen_snapshot = None
+        self.frozen_report = None
 
-        self.agent.set_seed(seed)
+        self.current_seed = seed if seed is not None else 42
+        self.agent.set_seed(self.current_seed)
         self.agent.reset_table()
+        self.frozen_snapshot = None
+        self.frozen_report = None
 
         self._stop_event.clear()
         self._loop_task = asyncio.create_task(self._train_loop())
@@ -307,6 +313,8 @@ class Trainer:
         self.total_transitions = 0
         self.episode_log = []
         self.visit_counts = np.zeros(NUM_STATES, dtype=np.int32)
+        self.frozen_snapshot = None
+        self.frozen_report = None
 
         self.maze_index = index
         self.env.set_layout(MAZE_PRESETS[index])

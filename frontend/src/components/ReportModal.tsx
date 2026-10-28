@@ -58,6 +58,14 @@ export const ReportModal: FC<ReportModalProps> = ({
     );
   }, [report.knowledge.policy_optimal_sets]);
 
+  const currentMazeBenchmark = useMemo(() => {
+    if (!benchmarkResult?.mazes) return null;
+    return (
+      benchmarkResult.mazes.find((m) => m.maze_index === report.meta.maze_index) ||
+      benchmarkResult.mazes[0]
+    );
+  }, [benchmarkResult, report.meta.maze_index]);
+
   if (!isOpen) return null;
 
   const { verdict, efficiency, curves, policy_accuracy, value_error, robustness, knowledge, meta } = report;
@@ -78,6 +86,9 @@ export const ReportModal: FC<ReportModalProps> = ({
             </span>
             <span className="font-mono text-xs text-[#111111]/70 border border-[#D9D4C7] px-2 py-0.5 bg-white/40">
               {activeMazeName} ({meta.optimal_len})
+            </span>
+            <span className="font-mono text-[10px] text-[#111111]/70 border border-[#D9D4C7] px-1.5 py-0.5 bg-white/40 uppercase">
+              {meta.speed_mode === 'step' ? 'Step-by-step' : meta.speed_mode}
             </span>
           </div>
 
@@ -181,6 +192,7 @@ export const ReportModal: FC<ReportModalProps> = ({
               </div>
               <div className="w-full flex-1 min-h-0 flex items-center justify-center p-1">
                 <Maze
+                  grid={meta.grid}
                   layer="beliefs"
                   valuesGrid={knowledge.v_learned}
                   policyGrid={knowledge.policy_learned}
@@ -202,6 +214,7 @@ export const ReportModal: FC<ReportModalProps> = ({
               </div>
               <div className="w-full flex-1 min-h-0 flex items-center justify-center p-1">
                 <Maze
+                  grid={meta.grid}
                   layer="ground_truth"
                   valuesGrid={knowledge.v_star}
                   policyGrid={optimalArrowsGrid}
@@ -223,6 +236,7 @@ export const ReportModal: FC<ReportModalProps> = ({
               </div>
               <div className="w-full flex-1 min-h-0 flex items-center justify-center p-1">
                 <Maze
+                  grid={meta.grid}
                   layer="error"
                   valuesGrid={knowledge.v_error_abs}
                   hasShadow={false}
@@ -251,7 +265,7 @@ export const ReportModal: FC<ReportModalProps> = ({
           <div className="flex-1 min-h-0 w-full relative flex items-center py-1">
             <InteractiveReliabilityChart
               dots={benchmarkDots}
-              summary={benchmarkResult?.mazes?.[0]?.episodes ?? null}
+              summary={currentMazeBenchmark?.episodes ?? null}
               activeSeedHover={activeSeedHover}
               onHoverSeed={setActiveSeedHover}
             />
@@ -337,7 +351,10 @@ export const ReportModal: FC<ReportModalProps> = ({
               <div className="flex justify-between text-[10px] font-mono mb-0.5">
                 <span className="font-bold text-[#111111]">On path</span>
                 <span className="font-bold tabular-nums text-[#111111]">
-                  {(policy_accuracy.on_path * 100).toFixed(0)}% <span className="font-normal text-[#111111]/60">({meta.optimal_len}/{meta.optimal_len})</span>
+                  {(policy_accuracy.on_path * 100).toFixed(0)}%{' '}
+                  <span className="font-normal text-[#111111]/60">
+                    ({policy_accuracy.n_on_path_correct ?? meta.optimal_len}/{policy_accuracy.n_on_path ?? meta.optimal_len})
+                  </span>
                 </span>
               </div>
               <div className="w-full h-3 bg-[#111111]/10 relative border border-[#111111]">
@@ -353,7 +370,10 @@ export const ReportModal: FC<ReportModalProps> = ({
               <div className="flex justify-between text-[10px] font-mono mb-0.5">
                 <span className="font-bold text-[#111111]">Visited states</span>
                 <span className="font-bold tabular-nums text-[#111111]">
-                  {(policy_accuracy.visited * 100).toFixed(0)}% <span className="font-normal text-[#111111]/60">(Corridor)</span>
+                  {(policy_accuracy.visited * 100).toFixed(0)}%{' '}
+                  <span className="font-normal text-[#111111]/60">
+                    ({policy_accuracy.n_visited_correct ?? 0}/{policy_accuracy.n_visited ?? 0})
+                  </span>
                 </span>
               </div>
               <div className="w-full h-3 bg-[#111111]/10 relative border border-[#111111]">
@@ -369,7 +389,10 @@ export const ReportModal: FC<ReportModalProps> = ({
               <div className="flex justify-between text-[10px] font-mono mb-0.5">
                 <span className="font-bold text-[#111111]">Reachable map</span>
                 <span className="font-bold tabular-nums text-[#111111]">
-                  {(policy_accuracy.reachable * 100).toFixed(0)}% <span className="font-normal text-[#111111]/60">({Math.round(policy_accuracy.reachable * 48)}/48)</span>
+                  {(policy_accuracy.reachable * 100).toFixed(0)}%{' '}
+                  <span className="font-normal text-[#111111]/60">
+                    ({policy_accuracy.n_reachable_correct ?? Math.round(policy_accuracy.reachable * (policy_accuracy.n_reachable || 48))}/{policy_accuracy.n_reachable || 48})
+                  </span>
                 </span>
               </div>
               <div className="w-full h-3 bg-[#111111]/10 relative border border-[#111111]">
@@ -633,8 +656,20 @@ const InteractiveReliabilityChart: FC<{
   const height = 95;
   const pad = { left: 24, right: 24, top: 12, bottom: 22 };
 
-  const minAtt = 80;
-  const maxAtt = 160;
+  const allAtts = dots
+    .map((d) => d.converged_episode)
+    .filter((v): v is number => typeof v === 'number');
+  const minAtt = Math.max(30, Math.floor((allAtts.length ? Math.min(...allAtts) : 50) / 10) * 10 - 10);
+  const maxAtt = Math.ceil((allAtts.length ? Math.max(...allAtts) : 75) / 10) * 10 + 10;
+
+  const ticks = useMemo(() => {
+    const step = (maxAtt - minAtt) <= 50 ? 10 : 20;
+    const res: number[] = [];
+    for (let v = Math.ceil(minAtt / step) * step; v <= maxAtt; v += step) {
+      res.push(v);
+    }
+    return res;
+  }, [minAtt, maxAtt]);
 
   const getX = (att: number) => {
     const clamped = Math.max(minAtt, Math.min(maxAtt, att));
@@ -643,13 +678,17 @@ const InteractiveReliabilityChart: FC<{
 
   const yCenter = height / 2 - 2;
 
+  const medianVal = summary?.median ?? (dots.length > 0 ? dots[Math.floor(dots.length / 2)]?.converged_episode ?? 64 : 64);
+  const ciLow = summary?.iqm_ci?.[0] ?? Math.max(minAtt, medianVal - 2);
+  const ciHigh = summary?.iqm_ci?.[1] ?? Math.min(maxAtt, medianVal + 2);
+
   // Disperse dots in an organic cluster inside the confidence zone
   const dotCoords = dots.map((d, i) => {
-    const att = d.converged_episode || 124;
+    const att = d.converged_episode || medianVal;
     const angle = (i / Math.max(1, dots.length)) * 2 * Math.PI;
     const ring = (i % 3) + 1;
-    const jx = Math.cos(angle) * (ring * 3.2);
-    const jy = Math.sin(angle) * (ring * 4.8);
+    const jx = Math.cos(angle) * (ring * 2.8);
+    const jy = Math.sin(angle) * (ring * 4.2);
     return {
       x: getX(att) + jx,
       y: yCenter + jy,
@@ -657,10 +696,6 @@ const InteractiveReliabilityChart: FC<{
       att,
     };
   });
-
-  const medianVal = summary?.median ?? (dots.length > 0 ? dots[Math.floor(dots.length / 2)]?.converged_episode ?? 124 : 124);
-  const ciLow = summary?.iqm_ci?.[0] ?? 118;
-  const ciHigh = summary?.iqm_ci?.[1] ?? 129;
 
   const medianX = getX(medianVal);
   const ciLowX = getX(ciLow);
@@ -688,7 +723,7 @@ const InteractiveReliabilityChart: FC<{
       />
 
       {/* Axis Ticks */}
-      {[80, 100, 120, 140, 160].map((val) => (
+      {ticks.map((val) => (
         <g key={val}>
           <line
             x1={getX(val)}
@@ -781,7 +816,12 @@ const InteractiveRobustnessChart: FC<{
 
   const maxEps = 0.3;
   const minSteps = Math.max(10, optimalSteps - 4);
-  const maxChartSteps = 60;
+  const maxNoiseSteps = noise.length > 0 ? Math.max(...noise.map((p) => p.mean_steps)) : optimalSteps + 20;
+  const maxChartSteps = Math.max(optimalSteps + 25, Math.ceil(maxNoiseSteps / 10) * 10 + 5);
+
+  const stepGuides = useMemo(() => {
+    return [optimalSteps, optimalSteps + 10, optimalSteps + 20];
+  }, [optimalSteps]);
 
   const [hoverEps, setHoverEps] = useState<number | null>(null);
 
@@ -804,7 +844,7 @@ const InteractiveRobustnessChart: FC<{
       <path d={areaPath} fill="rgba(255, 79, 0, 0.08)" />
 
       {/* Horizontal guide lines */}
-      {[32, 40, 50, 60].map((stepVal) => (
+      {stepGuides.map((stepVal) => (
         <g key={stepVal}>
           <line
             x1={pad.left}

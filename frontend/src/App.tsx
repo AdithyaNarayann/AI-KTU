@@ -42,6 +42,7 @@ export const App: FC = () => {
     setMaze,
     setSpeed,
     report,
+    fetchReport,
     benchmarkResult,
     benchmarkDots,
     isBenchmarking,
@@ -68,6 +69,7 @@ export const App: FC = () => {
       } else if ((e.key === 'r' || e.key === 'R') && !e.repeat) {
         if (isSolved) {
           e.preventDefault();
+          fetchReport();
           setIsReportOpen(true);
         }
       } else if (e.key === 'Escape' && isReportOpen) {
@@ -278,7 +280,10 @@ export const App: FC = () => {
               <button
                 type="button"
                 data-testid="report-button"
-                onClick={() => setIsReportOpen(true)}
+                onClick={() => {
+                  fetchReport();
+                  setIsReportOpen(true);
+                }}
                 style={{
                   boxShadow: '4px 4px 0px #111111',
                 }}

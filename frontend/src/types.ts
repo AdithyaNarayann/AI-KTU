@@ -94,6 +94,12 @@ export interface ReportPolicyAccuracy {
   visited: number;
   reachable: number;
   coverage: number;
+  n_on_path?: number;
+  n_on_path_correct?: number;
+  n_reachable?: number;
+  n_reachable_correct?: number;
+  n_visited?: number;
+  n_visited_correct?: number;
 }
 
 export interface ReportValueError {
@@ -133,6 +139,7 @@ export interface PerformanceReport {
     eps_floor: number;
     speed_mode: string;
     optimal_len: number;
+    grid?: string[];
   };
   verdict: ReportVerdict;
   efficiency: ReportEfficiency;

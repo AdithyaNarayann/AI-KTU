@@ -41,6 +41,7 @@ class ReportMeta(BaseModel):
     eps_floor: float
     speed_mode: str
     optimal_len: int
+    grid: List[str]
 
 
 class ReportVerdict(BaseModel):
@@ -86,6 +87,12 @@ class ReportPolicyAccuracy(BaseModel):
     visited: float
     reachable: float
     coverage: float
+    n_on_path: int = 0
+    n_on_path_correct: int = 0
+    n_reachable: int = 0
+    n_reachable_correct: int = 0
+    n_visited: int = 0
+    n_visited_correct: int = 0
 
 
 class ReportValueError(BaseModel):
@@ -353,6 +360,12 @@ def compute_policy_accuracy(
         'visited': round(visited_acc, 4),
         'reachable': round(reachable_acc, 4),
         'coverage': round(coverage, 4),
+        'n_on_path': counts['on_path_total'],
+        'n_on_path_correct': counts['on_path_correct'],
+        'n_reachable': counts['reachable_total'],
+        'n_reachable_correct': counts['reachable_correct'],
+        'n_visited': counts['visited_total'],
+        'n_visited_correct': counts['visited_correct'],
     }
 
 
@@ -723,6 +736,7 @@ def build_report(snapshot: TrainingSnapshot) -> Dict[str, Any]:
             'eps_floor': EPSILON_FLOOR,
             'speed_mode': snapshot.speed_mode,
             'optimal_len': optimal_len,
+            'grid': list(env.grid),
         },
         'verdict': {
             'status': status,

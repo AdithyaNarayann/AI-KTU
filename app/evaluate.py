@@ -110,7 +110,7 @@ def run_single_seed(
         steps_per_episode.append(steps)
         reached_per_episode.append(reached)
 
-        if ep % CONVERGENCE_CHECK_EVERY == 0:
+        if ep >= 15:
             if _greedy_check(env, agent):
                 consecutive += 1
                 if consecutive >= CONVERGENCE_STREAK_REQUIRED:

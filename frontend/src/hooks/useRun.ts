@@ -99,11 +99,9 @@ export function useRun() {
       if (res.ok) {
         const data = await res.json();
         setReport(data);
-      } else {
-        setReport(recordedReportFallback as unknown as PerformanceReport);
       }
-    } catch {
-      setReport(recordedReportFallback as unknown as PerformanceReport);
+    } catch (e) {
+      console.warn('Could not fetch report:', e);
     }
   }, [isReplayMode]);
 
@@ -207,16 +205,19 @@ export function useRun() {
   }, [isReplayMode, startReplay]);
 
   const run = useCallback((speed?: number | string) => {
+    setReport(null);
     lastSolvedMazeRef.current = null;
     send(speed !== undefined ? { type: 'run', speed } : { type: 'run' });
   }, [send]);
 
   const reset = useCallback(() => {
+    setReport(null);
     lastSolvedMazeRef.current = null;
     send({ type: 'reset' });
   }, [send]);
 
   const setMaze = useCallback((index: number) => {
+    setReport(null);
     lastSolvedMazeRef.current = null;
     send({ type: 'set_maze', index });
   }, [send]);

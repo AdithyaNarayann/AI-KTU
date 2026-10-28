@@ -596,35 +596,35 @@ Maze: Labyrinth (32) (BFS optimal: 32)
 ======================================================================
 Success rate: 100% (20/20)
 Episodes to converge:
-  Median: 125  Mean: 125.0 [125.0, 125.0]
-  IQM: 125.0 [125.0, 125.0]
-  Std: 0.0  Min: 125  Max: 125
+  Median: 63  Mean: 63.2 [62.4, 64.2]
+  IQM: 63.1 [62.3, 64.1]
+  Std: 2.2  Min: 59  Max: 68
 Transitions to converge:
-  Median: 9820  Mean: 9833  IQM: 9819
+  Median: 7796  Mean: 7812  IQM: 7802
 
 ======================================================================
 Maze: Classic (28) (BFS optimal: 28)
 ======================================================================
 Success rate: 100% (20/20)
 Episodes to converge:
-  Median: 125  Mean: 118.8 [113.8, 122.5]
-  IQM: 125.0 [113.8, 125.0]
-  Std: 11.1  Min: 100  Max: 125
+  Median: 56  Mean: 55.8 [54.4, 57.0]
+  IQM: 56.2 [54.4, 58.1]
+  Std: 3.2  Min: 49  Max: 60
 Transitions to converge:
-  Median: 8808  Mean: 8613  IQM: 8772
+  Median: 6824  Mean: 6808  IQM: 6834
 
 ======================================================================
 Maze: Zig-Zag (32) (BFS optimal: 32)
 ======================================================================
 Success rate: 100% (20/20)
 Episodes to converge:
-  Median: 125  Mean: 125.0 [125.0, 125.0]
-  IQM: 125.0 [125.0, 125.0]
-  Std: 0.0  Min: 125  Max: 125
+  Median: 66  Mean: 65.7 [65.2, 66.2]
+  IQM: 65.6 [64.8, 66.3]
+  Std: 1.2  Min: 64  Max: 68
 Transitions to converge:
-  Median: 9955  Mean: 9967  IQM: 9964
+  Median: 8028  Mean: 8026  IQM: 8032
 
-Total wall-clock time: 23.40s
+Total wall-clock time: 18.99s
 ```
 
 ### 11.2 Hyperparameter Sensitivity Grid ($\alpha \times \gamma$)

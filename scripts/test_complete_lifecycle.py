@@ -95,12 +95,34 @@ def test_lifecycle():
                 break
         assert switched_to_2, "Failed to switch to maze 2!"
 
-    print("\n[API] Testing /api/report caching...")
+        # Verify old report is cleanly invalidated on maze change
+        r_invalid = client.get("/api/report")
+        assert r_invalid.status_code == 409, "Report should be invalidated after maze switch!"
+        print("  Verified: Old report invalidated on maze switch (409).")
+
+        # Run Maze 2 to solved
+        ws.send_text(json.dumps({"type": "run", "speed": 10}))
+        m2_solved = False
+        while True:
+            msg = json.loads(ws.receive_text())
+            if msg.get("stage") == "solved":
+                m2_solved = True
+                print(f"  Maze 2 solved in {msg.get('result', {}).get('steps')} steps!")
+                break
+        assert m2_solved, "Maze 2 failed to solve!"
+
+    print("\n[API] Testing /api/report caching for Maze 2...")
     t0 = time.time()
     r = client.get("/api/report")
     t1 = time.time()
     print("  GET /api/report status:", r.status_code, f"time: {t1 - t0:.4f}s")
     assert r.status_code == 200
+    report_data = r.json()
+    assert report_data["meta"]["maze_index"] == 2
+    assert report_data["meta"]["optimal_len"] == 32
+    assert "grid" in report_data["meta"]
+    assert len(report_data["meta"]["grid"]) == 11
+    print("  Verified: Report meta has maze_index 2, optimal_len 32, and exact 11x11 grid!")
 
     print("\n[API] Testing /api/benchmark instant response...")
     t0 = time.time()
