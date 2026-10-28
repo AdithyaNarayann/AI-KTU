@@ -253,6 +253,15 @@ def compute_maze_stats(results: List[Dict[str, Any]], maze_index: int) -> Dict[s
             'episode_indices': indices,
             'fraction_converged': [round(reliability[i], 4) for i in indices],
         },
+        'seeds': [
+            {
+                'seed': r['seed'],
+                'converged': r['converged'],
+                'converged_episode': r['converged_episode'],
+                'transitions': r['transitions'],
+            }
+            for r in maze_results
+        ],
     }
 
 
@@ -323,7 +332,7 @@ def run_benchmark(
             all_results.append(result)
             done_count += 1
             if progress_callback:
-                progress_callback(done_count, total)
+                progress_callback(done_count, total, result)
 
     maze_stats = []
     for mi in maze_indices:
@@ -363,7 +372,7 @@ def main():
 
     maze_indices = [args.maze] if args.maze is not None else None
 
-    def progress(done, total):
+    def progress(done, total, *args):
         pct = done / total * 100
         print(f"\r  Progress: {done}/{total} ({pct:.0f}%)", end="", flush=True)
 

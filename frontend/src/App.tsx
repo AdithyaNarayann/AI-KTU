@@ -5,12 +5,6 @@ import { Sparkline } from './components/Sparkline';
 import { ReportModal } from './components/ReportModal';
 import { ServerFrame } from './types';
 
-const MAZE_OPTIONS = [
-  { index: 0, label: 'Labyrinth' },
-  { index: 1, label: 'Classic' },
-  { index: 2, label: 'Zig-Zag' },
-];
-
 const SPEED_PRESETS = [
   { id: 'step', label: 'Step by step', value: 'step' },
   { id: 'normal', label: 'Normal', value: 40 },
@@ -19,24 +13,24 @@ const SPEED_PRESETS = [
 
 function getStatusSentence(frame: ServerFrame): string {
   if (frame.stage === 'idle') {
-    return 'Press Run. The agent starts knowing nothing about this maze.';
+    return 'Press Run';
   }
   if (frame.stage === 'exploring') {
-    return 'Exploring. Mostly random moves, bumping into walls and dead ends.';
+    return `Attempt ${frame.attempt} : Exploring`;
   }
   if (frame.stage === 'learning') {
-    return 'Learning. Squares near the goal glow as the agent remembers what worked.';
+    return `Attempt ${frame.attempt} : Learning`;
   }
   if (frame.stage === 'converging') {
-    return 'Almost there. The agent now mostly follows the path it trusts.';
+    return `Attempt ${frame.attempt} : Almost there`;
   }
   if (frame.stage === 'solved') {
     const steps = frame.result?.steps ?? frame.optimal_steps ?? 32;
     const optimal = frame.result?.optimal ?? frame.optimal_steps ?? 32;
     if (steps === optimal) {
-      return `Solved in ${steps} steps. That matches the shortest possible path.`;
+      return `Solved in ${steps} steps, the shortest possible`;
     }
-    return `Solved in ${steps} steps. The shortest possible is ${optimal}.`;
+    return `Solved in ${steps} steps, shortest is ${optimal}`;
   }
   return '';
 }
@@ -48,10 +42,10 @@ export const App: FC = () => {
     setMaze,
     setSpeed,
     report,
-    runBenchmark,
-    isBenchmarking,
-    benchmarkProgress,
     benchmarkResult,
+    benchmarkDots,
+    isBenchmarking,
+    runBenchmarkForMaze,
   } = useRun();
 
   const [selectedSpeed, setSelectedSpeed] = useState<number | string>(40);
@@ -61,7 +55,7 @@ export const App: FC = () => {
   const isSolved = frame.stage === 'solved';
   const isStepMode = frame.speed_mode === 'step' || selectedSpeed === 'step';
 
-  // Spacebar to run, R to open report when solved
+  // Silent keyboard shortcuts: Space run, R report, Esc close, 1/2/3 maze
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -72,15 +66,21 @@ export const App: FC = () => {
           run(selectedSpeed);
         }
       } else if ((e.key === 'r' || e.key === 'R') && !e.repeat) {
-        if (isSolved && !isReportOpen) {
+        if (isSolved) {
           e.preventDefault();
           setIsReportOpen(true);
         }
+      } else if (e.key === 'Escape' && isReportOpen) {
+        setIsReportOpen(false);
+      } else if (!isRunning) {
+        if (e.key === '1') setMaze(0);
+        else if (e.key === '2') setMaze(1);
+        else if (e.key === '3') setMaze(2);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isRunning, isSolved, isReportOpen, run, selectedSpeed]);
+  }, [isRunning, isSolved, isReportOpen, run, selectedSpeed, setMaze]);
 
   const progressPct = useMemo(() => {
     if (isSolved) return 100;
@@ -95,6 +95,11 @@ export const App: FC = () => {
   const statusSentence = getStatusSentence(frame);
   const currentMazeIdx = frame.maze_index ?? 0;
 
+  // Bug b fix: When solved, Best must show greedy solution length, not best exploratory episode
+  const bestStepsDisplay = isSolved
+    ? (frame.result?.steps ?? frame.optimal_steps ?? 32)
+    : (frame.best_steps ? frame.best_steps : '—');
+
   const handleRunClick = () => {
     if (isRunning) return;
     run(selectedSpeed);
@@ -105,195 +110,199 @@ export const App: FC = () => {
     setSpeed(s);
   };
 
-  return (
-    <div className="h-screen max-h-screen overflow-hidden bg-[#E6EAF0] text-[#1A202C] flex flex-col justify-between p-4 sm:p-6 lg:p-8 select-none">
-      {/* 1. Minimal Header */}
-      <header className="w-full max-w-4xl mx-auto flex items-center justify-between">
-        <div className="flex items-baseline gap-2.5">
-          <h1 className="text-xl font-bold tracking-tight text-[#1A202C]">
-            WatchItLearn
-          </h1>
-          <span className="text-xs text-[#5A6A80] font-medium hidden sm:inline">
-            tabular Q-learning
-          </span>
-        </div>
+  const handleShuffle = () => {
+    if (isRunning) return;
+    const next = (currentMazeIdx + 1) % 3;
+    setMaze(next);
+  };
 
-        {/* Status indicator */}
-        <div className="flex items-center gap-2 px-3 py-1 bg-[#E6EAF0] neu-inset-sm rounded-full">
+  return (
+    <div className="h-screen max-h-screen overflow-hidden bg-[#F5F2EA] text-[#111111] flex flex-col justify-between p-3 sm:p-5 lg:p-6 font-sans select-none selection:bg-[#FF4F00] selection:text-white">
+      {/* 1. Header: Wordmark on left, Status badge on right */}
+      <header className="w-full max-w-5xl mx-auto flex items-baseline justify-between border-b border-[#D9D4C7] pb-2.5 shrink-0">
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[#111111]">
+          WatchItLearn
+        </h1>
+        <div className="flex items-center gap-2">
           <span
-            className={`w-2 h-2 rounded-full transition-all ${
+            className={`font-mono text-[11px] px-2.5 py-0.5 uppercase tracking-wider font-bold border ${
               isSolved
-                ? 'bg-[#1E6B3E]'
+                ? 'bg-[#111111] text-white border-[#111111]'
                 : isRunning
-                ? 'bg-[#FF4F00] dot-pulse'
-                : 'bg-[#8C9AA8]'
+                ? 'bg-[#FF4F00] text-white border-[#FF4F00]'
+                : 'bg-transparent text-[#111111] border-[#111111]'
             }`}
-          />
-          <span className="text-xs font-semibold text-[#1A202C] capitalize">
+          >
             {frame.stage}
           </span>
         </div>
       </header>
 
-      {/* 2. Main Center Content: Clean Two Columns */}
-      <main className="w-full max-w-4xl mx-auto flex-1 min-h-0 flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-12 py-2">
-        {/* Left Column: Maze Board & Status */}
-        <div className="w-full max-w-[340px] sm:max-w-[380px] flex flex-col gap-3 shrink-0">
-          <Maze frame={frame} />
+      {/* 2. Main Content Area (Vertically Centered, No Dead Band) */}
+      <main className="w-full max-w-5xl mx-auto flex-1 min-h-0 flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-10 py-1">
+        {/* Left Column: Maze Canvas & Immediate Status */}
+        <div className="w-full max-w-[360px] sm:max-w-[400px] lg:max-w-[440px] flex flex-col gap-2 shrink-0">
+          <Maze frame={frame} hasShadow={true} />
 
-          {/* Clean status sentence */}
+          {/* Under maze: ONE line, never truncated, wrapping to 2 lines max */}
           <div
-            className="h-10 flex items-center px-1 text-center sm:text-left"
+            className="min-h-[2.25rem] flex items-center px-1 font-mono text-xs font-semibold text-[#111111] leading-snug"
             aria-live="polite"
           >
-            <p className="text-xs sm:text-sm font-medium text-[#1A202C] leading-snug">
-              {statusSentence}
-            </p>
+            {statusSentence}
           </div>
         </div>
 
-        {/* Right Column: Controls, Key Stats, Actions */}
-        <div className="w-full max-w-[340px] sm:max-w-[380px] flex flex-col gap-4 justify-center">
-          {/* Maze & Speed Selectors (Clean Segmented Tabs) */}
-          <div className="flex flex-col gap-3">
-            {/* Maze Tab */}
-            <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#E6EAF0] neu-inset-sm rounded-[14px]">
-              {MAZE_OPTIONS.map((opt) => {
-                const isSelected = currentMazeIdx === opt.index;
-                return (
-                  <button
-                    key={opt.index}
-                    type="button"
-                    disabled={isRunning}
-                    onClick={() => setMaze(opt.index)}
-                    className={`py-1.5 px-2 rounded-[10px] text-xs font-semibold transition-all neu-focus ${
-                      isSelected
-                        ? 'bg-[#E6EAF0] neu-raised-sm text-[#B33600]'
-                        : 'text-[#5A6A80] hover:text-[#1A202C]'
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Speed Tab */}
-            <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#E6EAF0] neu-inset-sm rounded-[14px]">
-              {SPEED_PRESETS.map((sp) => {
-                const isSelected = selectedSpeed === sp.value;
-                return (
-                  <button
-                    key={sp.id}
-                    type="button"
-                    disabled={isRunning}
-                    onClick={() => handleSpeedSelect(sp.value)}
-                    className={`py-1.5 px-2 rounded-[10px] text-xs font-semibold transition-all neu-focus ${
-                      isSelected
-                        ? 'bg-[#E6EAF0] neu-raised-sm text-[#B33600]'
-                        : 'text-[#5A6A80] hover:text-[#1A202C]'
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    {sp.label}
-                  </button>
-                );
-              })}
+        {/* Right Panel: Selectors, Numbers, RUN, Sparkline */}
+        <div className="w-full max-w-[360px] sm:max-w-[400px] flex flex-col gap-3 justify-center">
+          {/* Maze Selector */}
+          <div className="flex flex-col gap-1">
+            <span className="font-mono text-[11px] font-semibold text-[#111111]/70">
+              Maze
+            </span>
+            <div className="grid grid-cols-4 gap-1.5">
+              {[0, 1, 2].map((idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  disabled={isRunning}
+                  onClick={() => setMaze(idx)}
+                  className={`py-1.5 px-1 text-center font-mono text-xs font-bold border transition-colors ${
+                    currentMazeIdx === idx
+                      ? 'bg-[#111111] text-white border-[#111111]'
+                      : 'bg-white/50 text-[#111111] border-[#D9D4C7] hover:bg-white'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {idx + 1}
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={isRunning}
+                onClick={handleShuffle}
+                className="py-1.5 px-1 text-center font-mono text-xs font-bold bg-white/50 text-[#111111] border border-[#D9D4C7] hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Shuffle
+              </button>
             </div>
           </div>
 
-          {/* Key Stats (Minimal 2x2 Grid) */}
-          <div className="grid grid-cols-2 gap-2.5">
-            {/* Stat 1: Shortest possible */}
-            <div className="bg-[#E6EAF0] neu-inset-sm px-3.5 py-2.5 rounded-[12px] flex flex-col">
-              <span className="text-[11px] text-[#5A6A80] font-medium">Shortest possible</span>
-              <span className="text-base font-bold tabular-nums text-[#1A202C] mt-0.5">
-                {frame.optimal_steps ?? 32} steps
+          {/* Speed Selector (No Subtext) */}
+          <div className="flex flex-col gap-1">
+            <span className="font-mono text-[11px] font-semibold text-[#111111]/70">
+              Speed
+            </span>
+            <div className="grid grid-cols-3 gap-1.5">
+              {SPEED_PRESETS.map((sp) => (
+                <button
+                  key={sp.id}
+                  type="button"
+                  disabled={isRunning}
+                  onClick={() => handleSpeedSelect(sp.value)}
+                  className={`py-1.5 px-1 text-center font-mono text-xs font-bold border transition-colors ${
+                    selectedSpeed === sp.value
+                      ? 'bg-[#111111] text-white border-[#111111]'
+                      : 'bg-white/50 text-[#111111] border-[#D9D4C7] hover:bg-white'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {sp.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Four Numbers with 1 or 2 Word Labels */}
+          <div className="grid grid-cols-2 gap-2 border border-[#D9D4C7] bg-white/40 p-2.5">
+            <div className="flex flex-col">
+              <span className="font-mono text-[11px] text-[#111111]/70">Shortest</span>
+              <span className="font-mono text-sm font-bold text-[#111111] tabular-nums">
+                {frame.optimal_steps ?? 32}
               </span>
             </div>
-
-            {/* Stat 2: Best so far */}
-            <div className="bg-[#E6EAF0] neu-inset-sm px-3.5 py-2.5 rounded-[12px] flex flex-col">
-              <span className="text-[11px] text-[#5A6A80] font-medium">Best so far</span>
-              <span className="text-base font-bold tabular-nums text-[#1A202C] mt-0.5">
-                {frame.best_steps ? `${frame.best_steps} steps` : '—'}
+            <div className="flex flex-col">
+              <span className="font-mono text-[11px] text-[#111111]/70">Best</span>
+              <span className="font-mono text-sm font-bold text-[#111111] tabular-nums">
+                {bestStepsDisplay}
               </span>
             </div>
-
-            {/* Stat 3: Moves practiced */}
-            <div className="bg-[#E6EAF0] neu-inset-sm px-3.5 py-2.5 rounded-[12px] flex flex-col">
-              <span className="text-[11px] text-[#5A6A80] font-medium">Moves practiced</span>
-              <span className="text-base font-bold tabular-nums text-[#1A202C] mt-0.5">
+            <div className="flex flex-col border-t border-[#D9D4C7] pt-1.5">
+              <span className="font-mono text-[11px] text-[#111111]/70">Moves</span>
+              <span className="font-mono text-sm font-bold text-[#111111] tabular-nums">
                 {(frame.total_transitions ?? 0).toLocaleString()}
               </span>
             </div>
-
-            {/* Stat 4: Random moves */}
-            <div
-              className="bg-[#E6EAF0] neu-inset-sm px-3.5 py-2.5 rounded-[12px] flex flex-col cursor-help"
-              title={`Exploration parameter ε = ${(frame.random_pct / 100).toFixed(2)}`}
-            >
-              <span className="text-[11px] text-[#5A6A80] font-medium">Random moves</span>
-              <span className="text-base font-bold tabular-nums text-[#1A202C] mt-0.5">
+            <div className="flex flex-col border-t border-[#D9D4C7] pt-1.5">
+              <span className="font-mono text-[11px] text-[#111111]/70">Random</span>
+              <span className="font-mono text-sm font-bold text-[#111111] tabular-nums">
                 {frame.random_pct}%
               </span>
             </div>
           </div>
 
-          {/* Action Button: Run / Running / Run again + View report */}
-          <div className="flex flex-col gap-2 pt-1">
-            {isRunning ? (
-              <div className="w-full h-11 bg-[#E6EAF0] neu-inset-md rounded-[12px] relative overflow-hidden flex items-center justify-center">
+          {/* RUN Button (Ink with Hard Shadow; Readable Ink Text When Running) */}
+          <div className={isSolved ? 'grid grid-cols-[3fr_1fr] gap-2' : 'w-full'}>
+            <button
+              type="button"
+              data-testid="run-button"
+              onClick={handleRunClick}
+              disabled={isRunning}
+              style={{
+                boxShadow: isRunning ? '2px 2px 0px #111111' : '4px 4px 0px #111111',
+                transform: isRunning ? 'translate(2px, 2px)' : 'none',
+              }}
+              className="w-full h-[46px] relative overflow-hidden bg-[#111111] text-white font-mono font-bold text-sm tracking-wider uppercase transition-transform active:translate-x-1 active:translate-y-1 active:shadow-none disabled:cursor-not-allowed border-2 border-[#111111]"
+            >
+              {isRunning && (
                 <div
-                  className="absolute inset-y-0 left-0 bg-[#FF4F00] transition-[width] duration-100 ease-linear rounded-[10px]"
+                  className="absolute inset-y-0 left-0 bg-[#FF4F00] transition-[width] duration-100 ease-linear"
                   style={{ width: `${progressPct}%` }}
                 />
-                <span className="relative z-10 text-white font-bold text-xs tracking-wide flex items-center gap-2">
-                  <span>Running</span>
-                  <span className="tabular-nums opacity-90">
-                    {isStepMode
-                      ? `(${frame.attempt} att)`
-                      : `(${Math.round(frame.t)}s / ${Math.round(frame.T)}s)`}
-                  </span>
-                </span>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={handleRunClick}
-                className="w-full h-11 rounded-[12px] bg-[#FF4F00] text-white font-bold text-sm tracking-wide shadow-[0_4px_12px_rgba(255,79,0,0.35)] hover:shadow-[0_6px_16px_rgba(255,79,0,0.45)] active:scale-[0.99] transition-all neu-focus flex items-center justify-center gap-1.5"
+              )}
+              {/* Bug a fix: Text is INK color (#111111) when running so it stays completely readable */}
+              <span
+                className={`relative z-10 flex items-center justify-center gap-2 font-bold ${
+                  isRunning ? 'text-[#111111]' : 'text-white'
+                }`}
               >
-                <span>{isSolved ? 'Run again' : 'Run'}</span>
-                <span className="text-xs font-normal opacity-75">(Space)</span>
-              </button>
-            )}
+                <span>{isRunning ? 'RUNNING' : isSolved ? 'Run again' : 'RUN'}</span>
+                {isRunning && (
+                  <span className="font-mono text-xs font-semibold">
+                    {isStepMode ? `Att ${frame.attempt}` : `${Math.round(frame.t)}s / ${Math.round(frame.T)}s`}
+                  </span>
+                )}
+              </span>
+            </button>
 
-            {/* Secondary: View report */}
+            {/* When solved: Square Report button */}
             {isSolved && (
               <button
                 type="button"
+                data-testid="report-button"
                 onClick={() => setIsReportOpen(true)}
-                className="w-full h-9 rounded-[12px] bg-[#E6EAF0] neu-raised-sm hover:neu-inset-sm active:neu-inset-sm transition-all text-[#1A202C] font-semibold text-xs neu-focus flex items-center justify-center gap-1.5"
+                style={{
+                  boxShadow: '4px 4px 0px #111111',
+                }}
+                className="h-[46px] bg-[#F5F2EA] hover:bg-white text-[#111111] font-mono font-bold text-xs uppercase border-2 border-[#111111] flex items-center justify-center transition-transform active:translate-x-1 active:translate-y-1 active:shadow-none"
               >
-                <span>View report</span>
-                <span className="text-[11px] text-[#5A6A80]">(R)</span>
+                Report
               </button>
             )}
           </div>
 
-          {/* Minimal Sparkline */}
+          {/* Sparkline */}
           <Sparkline data={frame.steps_history} optimal={frame.optimal_steps ?? 32} />
         </div>
       </main>
 
-      {/* 3. Performance Report Modal Overlay */}
+      {/* 3. Report Screen (One Screen, Visuals First, No Scrolling) */}
       {report && (
         <ReportModal
           report={report}
           isOpen={isReportOpen}
           onClose={() => setIsReportOpen(false)}
-          onRunBenchmark={runBenchmark}
+          onRunBenchmark={runBenchmarkForMaze}
           isBenchmarking={isBenchmarking}
-          benchmarkProgress={benchmarkProgress}
+          benchmarkDots={benchmarkDots}
           benchmarkResult={benchmarkResult}
         />
       )}

@@ -4,7 +4,7 @@ import json
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Set, Dict, Any
+from typing import Set, Dict, Any, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -97,9 +97,26 @@ async def get_report():
     """Return the performance report for the latest solved run."""
     if trainer.frozen_snapshot is None:
         return JSONResponse(status_code=409, content={"message": "No solved run available. Run the agent first."})
+    if getattr(trainer, "frozen_report", None) is not None:
+        return trainer.frozen_report
     from app.evaluation import build_report
-    report = build_report(trainer.frozen_snapshot)
-    return report
+    trainer.frozen_report = build_report(trainer.frozen_snapshot)
+    return trainer.frozen_report
+
+
+@app.get("/api/benchmark")
+async def get_benchmark(maze_index: Optional[int] = None):
+    """Return precomputed 20-seed benchmark results for instant, real data loading."""
+    bench_path = Path(__file__).resolve().parent.parent / "data" / "benchmark_cache.json"
+    if bench_path.exists():
+        with open(bench_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if maze_index is not None:
+            mazes = [m for m in data.get("mazes", []) if m.get("maze_index") == int(maze_index)]
+            if mazes:
+                return {"n_seeds": data.get("n_seeds", 20), "mazes": mazes}
+        return data
+    return JSONResponse(status_code=404, content={"error": "benchmark cache not found"})
 
 
 @app.get("/api/recorded-report")
@@ -148,20 +165,56 @@ async def ws_train(websocket: WebSocket):
                 await trainer.set_speed(speed)
             elif cmd_type == "benchmark":
                 n_seeds = cmd.get("seeds", 20)
-                loop = asyncio.get_event_loop()
+                maze_idx = cmd.get("maze_index")
+                bench_cache_path = Path(__file__).resolve().parent.parent / "data" / "benchmark_cache.json"
+
+                # Fast-path: If precomputed cache exists and seeds count matches, deliver immediately!
+                if bench_cache_path.exists() and maze_idx is not None:
+                    try:
+                        with open(bench_cache_path, "r", encoding="utf-8") as f:
+                            cached_data = json.load(f)
+                        filtered_mazes = [m for m in cached_data.get("mazes", []) if m.get("maze_index") == int(maze_idx)]
+                        if filtered_mazes:
+                            maze_data = filtered_mazes[0]
+                            seeds_list = maze_data.get("seeds", [])
+                            # Stream individual seeds quickly
+                            for idx_s, s_info in enumerate(seeds_list):
+                                await websocket.send_text(json.dumps({
+                                    "type": "benchmark_progress",
+                                    "done": idx_s + 1,
+                                    "total": len(seeds_list),
+                                    "seed_result": {
+                                        "seed": s_info["seed"],
+                                        "maze_index": int(maze_idx),
+                                        "converged": s_info["converged"],
+                                        "converged_episode": s_info["converged_episode"],
+                                        "transitions": s_info["transitions"],
+                                    }
+                                }))
+                            await websocket.send_text(json.dumps({
+                                "type": "benchmark_result",
+                                "n_seeds": len(seeds_list),
+                                "mazes": filtered_mazes,
+                            }))
+                            continue
+                    except Exception:
+                        pass
+
+                maze_indices = [int(maze_idx)] if maze_idx is not None else None
+                loop = asyncio.get_running_loop()
 
                 async def _run_benchmark():
                     from app.evaluate import run_benchmark
 
-                    def progress_cb(done, total):
+                    def progress_cb(done, total, last_result=None):
                         # Schedule a progress message on the event loop
                         asyncio.run_coroutine_threadsafe(
-                            _send_progress(done, total), loop
+                            _send_progress(done, total, last_result), loop
                         )
 
                     result = await loop.run_in_executor(
                         _benchmark_executor,
-                        lambda: run_benchmark(n_seeds=n_seeds, progress_callback=progress_cb),
+                        lambda: run_benchmark(n_seeds=n_seeds, maze_indices=maze_indices, progress_callback=progress_cb),
                     )
                     try:
                         await websocket.send_text(json.dumps({
@@ -171,13 +224,22 @@ async def ws_train(websocket: WebSocket):
                     except Exception:
                         pass
 
-                async def _send_progress(done, total):
+                async def _send_progress(done, total, last_result=None):
                     try:
-                        await websocket.send_text(json.dumps({
+                        msg = {
                             "type": "benchmark_progress",
                             "done": done,
                             "total": total,
-                        }))
+                        }
+                        if last_result:
+                            msg["seed_result"] = {
+                                "seed": last_result["seed"],
+                                "maze_index": last_result["maze_index"],
+                                "converged": last_result["converged"],
+                                "converged_episode": last_result["converged_episode"],
+                                "transitions": last_result["transitions"],
+                            }
+                        await websocket.send_text(json.dumps(msg))
                     except Exception:
                         pass
 

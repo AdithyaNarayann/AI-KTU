@@ -59,6 +59,7 @@ class Trainer:
         self.episode_log: List[Dict[str, Any]] = []
         self.visit_counts: np.ndarray = np.zeros(NUM_STATES, dtype=np.int32)
         self.frozen_snapshot: Optional[Any] = None  # TrainingSnapshot, set on solve
+        self.frozen_report: Optional[Any] = None  # PerformanceReport dict, precomputed on solve
 
         self._loop_task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
@@ -84,7 +85,7 @@ class Trainer:
 
     def _freeze_snapshot(self) -> None:
         """Freeze a snapshot of the current training state for the report."""
-        from app.evaluation import TrainingSnapshot
+        from app.evaluation import TrainingSnapshot, build_report
         # Mark the last episode as the convergence point
         if self.episode_log:
             self.episode_log[-1]['converged'] = True
@@ -97,6 +98,10 @@ class Trainer:
             seed=42,  # default seed
             speed_mode=self.speed_mode,
         )
+        try:
+            self.frozen_report = build_report(self.frozen_snapshot)
+        except Exception:
+            self.frozen_report = None
 
     async def broadcast(self, payload: Dict[str, Any]) -> None:
         """Send message through WebSocket callback."""
@@ -256,6 +261,7 @@ class Trainer:
             except asyncio.CancelledError:
                 pass
         self._loop_task = None
+        self._stop_event.clear()
 
         self.stage = "idle"
         self.t = 0.0
@@ -280,12 +286,32 @@ class Trainer:
         """Switch maze layout preset, reset agent, and broadcast initial frame."""
         from app.config import MAZE_PRESETS
         index = max(0, min(len(MAZE_PRESETS) - 1, int(index)))
-        await self.reset()
+        self._stop_event.set()
+        if self._loop_task and not self._loop_task.done():
+            self._loop_task.cancel()
+            try:
+                await self._loop_task
+            except asyncio.CancelledError:
+                pass
+        self._loop_task = None
+        self._stop_event.clear()
+
+        self.stage = "idle"
+        self.t = 0.0
+        self.attempt = 0
+        self.steps_history = []
+        self.consecutive_converged = 0
+        self.is_solved = False
+        self.final_result = None
+        self.best_steps = None
+        self.total_transitions = 0
+        self.episode_log = []
+        self.visit_counts = np.zeros(NUM_STATES, dtype=np.int32)
+
         self.maze_index = index
         self.env.set_layout(MAZE_PRESETS[index])
         self.agent.reset_table()
-        self.best_steps = None
-        self.total_transitions = 0
+
         sr, sc = self.env.start_pos
         init_frame = self.build_frame(sr, sc, [(sr, sc)])
         init_frame["stage"] = "idle"
@@ -299,6 +325,13 @@ class Trainer:
         else:
             self.speed_mode = "normal"
             self.T = max(3.0, float(target_seconds))
+
+        if self.stage in ("idle", "solved"):
+            sr, sc = self.env.start_pos
+            f = self.build_frame(sr, sc, [(sr, sc)])
+            if self.stage == "idle":
+                f["stage"] = "idle"
+            await self.broadcast(f)
 
     async def _train_loop(self) -> None:
         """Master training loop with Step-by-Step mode or Phase 1 flailing + Phase 2 turbo."""
@@ -511,6 +544,9 @@ class Trainer:
             nr, nc = decode(next_s)
             trail.append((nr, nc))
 
+            if self._stop_event.is_set():
+                return
+
             frame = self.build_frame(nr, nc, trail)
             frame["stage"] = "solved"
             await self.broadcast(frame)
@@ -521,8 +557,14 @@ class Trainer:
 
             await asyncio.sleep(step_dt)
 
+        if self._stop_event.is_set():
+            return
+
         # Final persistent frame
         await asyncio.sleep(0.2)
+        if self._stop_event.is_set():
+            return
+
         final_frame = self.build_frame(self.env.goal_pos[0], self.env.goal_pos[1], trail)
         final_frame["stage"] = "solved"
         await self.broadcast(final_frame)

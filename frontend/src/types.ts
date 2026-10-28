@@ -30,7 +30,7 @@ export type ClientCommand =
   | { type: 'reset' }
   | { type: 'set_maze'; index: number }
   | { type: 'set_speed'; speed: number | string }
-  | { type: 'benchmark'; seeds?: number };
+  | { type: 'benchmark'; seeds?: number; maze_index?: number };
 
 export interface MazePreset {
   index: number;

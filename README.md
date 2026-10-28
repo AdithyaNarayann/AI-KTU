@@ -485,53 +485,51 @@ A stand-alone recording script:
 
 ## 9. Frontend Architecture & UI/UX Design
 
-The frontend is a tactile, single-page web dashboard developed with **React 18**, **TypeScript**, **Vite**, and **Tailwind CSS**. It is designed around a disciplined neumorphic aesthetic: soft tactile surfaces, subtle directional shadows, and a single orange accent.
+The frontend is a tactile, single-page web dashboard developed with **React 18**, **TypeScript**, **Vite**, and **Tailwind CSS**. It is designed around a disciplined Bauhaus / Swiss aesthetic: warm cream paper surfaces, sharp ink hairlines, hard offset shadows, International Orange accents, and strict typographic hierarchy.
 
 ### 9.1 Single Unscrollable Viewport & Responsive Layout
-The core dashboard is engineered to fit within a single, unscrollable screen (`h-screen max-h-screen overflow-hidden`) across common desktop display resolutions (1280x720, 1366x768, and 1920x1080), stacking cleanly below 900 px:
-- **Left Column**: $11 \times 11$ Canvas maze viewport, live attempt counter, random move percentage, and a fixed two-line live status sentence.
-- **Right Column**: 
-  - Maze layout selector (`Labyrinth`, `Classic`, `Zig-Zag`).
-  - Training speed selector (`Step by step`, `Normal`, `Fast`).
-  - High-density data grid (Shortest possible, Best so far, Moves practiced, Random moves).
-  - Primary **Run** action button with an integrated progress bar fill.
-  - Secondary **View report** action button (available once solved; hotkey R).
-  - Real-time SVG convergence sparkline with hover tooltips and dashed optimum baseline.
-- **Top Header**: Wordmark and an inset status pill with a pulsating state dot.
-- **Keyboard Accessibility**: The **Spacebar** triggers or restarts learning; **R** opens the report once solved; **Esc** closes the report overlay; visible 2 px orange focus ring on all interactive elements.
+Both the main dashboard and the performance analysis report overlay are engineered to fit within a single, strictly unscrollable viewport (`h-screen overflow-hidden`) across common desktop resolutions (1280x720, 1366x768, and 1920x1080):
+- **Header**: Wordmark on the left, status badge on the right (idle outlined, running orange fill, solved ink fill with white text).
+- **Left Column**: $11 \times 11$ Canvas maze viewport with hard offset ink shadow (`4px 4px 0px #111111`). Under the board, a single non-truncated status line displays attempt index and stage:
+  - *Idle*: `"Press Run"`
+  - *Exploring*: `"Attempt 19 : Exploring"`
+  - *Learning*: `"Attempt 64 : Learning"`
+  - *Converging*: `"Attempt 118 : Almost there"`
+  - *Solved*: `"Solved in 32 steps, the shortest possible"` (or `"Solved in 35 steps, shortest is 32"`)
+- **Right Column**:
+  - Maze layout selector (`1`, `2`, `3`, `Shuffle`).
+  - Speed selector (`Step by step`, `Normal`, `Fast`) with clean, concise labels.
+  - Four data tiles with one-word labels: `Shortest`, `Best`, `Moves`, `Random`. When solved, `Best` displays the greedy solution length (e.g., 32), matching the true BFS path.
+  - Primary **RUN** action button with hard offset shadow (`4px 4px 0px #111111`). When running, an orange progress bar fills the button with high-contrast ink text. When solved, transitions to `"Run again"` with an adjacent square `"Report"` button.
+  - Real-time steps-per-attempt sparkline with dashed optimum baseline and tabular values.
+- **Keyboard Shortcuts**: **Spacebar** runs or restarts learning; **R** opens the report when solved; **Esc** closes the report overlay; **1**, **2**, **3** switch maze presets.
 
-### 9.2 Neumorphic Design Tokens & Accessibility
-- **Surface**: `#E6EAF0`
-- **Primary Text**: `#1F2733` (contrast ratio 12.5:1 against surface, exceeding WCAG AAA)
-- **Secondary Text**: `#4A5568` (contrast ratio 6.2:1, exceeding WCAG AA)
-- **Accent Fill & Glow**: `#FF4F00` (used exclusively for fills and glows)
-- **Accent Text**: `#B33600` (contrast ratio 5.05:1 on surface, exceeding WCAG AA 4.5:1 minimum)
-- **Status Solved Green**: `#1E6B3E` (contrast ratio 5.39:1 on surface, exceeding WCAG AA)
-- **Shadow Tokens**: Light shadow `rgba(255, 255, 255, 0.85)`, dark shadow `rgba(163, 177, 198, 0.65)` with light source from top-left. Raised and inset elevations defined as CSS variables with 14 px control radius and 28 px slab radius.
-- **Offline Typography**: Manrope Variable font packaged locally via `@fontsource-variable/manrope` with zero CDN dependencies. Tabular figures enabled across all numbers (`tabular-nums`). Sentence case used consistently across all interface copy with no tracked all-caps labels, no monospace font for labels, and no em dashes or en dashes.
+### 9.2 Bauhaus Design Tokens & Typography
+- **Paper Surface**: `#F5F2EA` (warm cream paper base)
+- **Ink Primary**: `#111111` (solid high-contrast ink for text, borders, and maze walls)
+- **Accent Orange**: `#FF4F00` (International Orange, reserved strictly for fills, lines, and active indicators; never used for small text)
+- **Hairline Border**: `#D9D4C7` (1px subtle grid separators)
+- **Geometry**: Square corners everywhere (`rounded-none`), 1px ink hairlines, hard offset shadow (`4px 4px 0px #111111`) only on the maze canvas and primary RUN button. No blur shadows, no gradients, no glows, no rounded pills.
+- **Offline Typography**: Space Grotesk / Manrope bold for display titles; JetBrains Mono for metrics, state badges, and tabular figures. Minimum font size 12px.
+- **Strict Text Diet**: Titles $\le 3$ words, captions $\le 8$ words. Zero methods paragraphs or jargon on screen (no Bellman, RMSE, BFS, epsilon, regret, residual on screen; details confined to hover tooltips). No em dashes or en dashes.
 
 ### 9.3 High-Performance Canvas Rendering
 The maze is rendered on an HTML5 2D canvas in `frontend/src/components/Maze.tsx`:
-1. **Offscreen Canvas Pre-rendering**: The static maze background (surface slab, carved corridors, directional inset shadows, and landmark rings) is pre-rendered once per layout to an offscreen canvas buffer, eliminating wall calculation overhead during live training.
-2. **Merged Carved Channel**: Corridors are drawn as a single continuous carved channel (`#D8DDE6`) inset into the slab, with top and left wall boundaries casting dark inner shadows and bottom and right boundaries reflecting light highlights.
-3. **Soft Heatmap Bloom**: Learned state values render as a soft radial orange glow inside the corridor channel rather than hard square tiles.
-4. **Agent Representation**: Rendered as a raised 3D glossy orange orb with top-left specular reflection and drop shadow; movement history is displayed as fading translucent dots.
-5. **Landmark Markers**: Start position `S` is an inset ring; goal `G` is an inset ring enclosing a radiant orange core.
-6. **Victory Sweep**: Upon convergence, an animated glowing orange path line sweeps from start to goal in 1.2 seconds.
-7. **Multi-layer Reusability**: The same component is reused in the performance report modal with a `layer` prop (`beliefs`, `ground_truth`, `error`) and optional policy direction arrows.
+1. **Solid Ink Walls**: Walls are rendered as crisp, solid `#111111` ink blocks on `#F5F2EA` paper floor tiles for maximum contrast and legibility.
+2. **Value Tint Heatmap**: Discovered state values render as clean International Orange tints on paper floor tiles: $\text{rgba}(255, 79, 0, \text{value} \times 0.65)$.
+3. **Agent Glyph**: A solid orange square agent with sharp corners, accompanied by an `S` marker at the start position and a nested-square goal glyph at `G`.
+4. **Fading Trail**: Trajectory history renders as fading orange squares tracing recent movements.
+5. **Path Sweep Animation**: Upon convergence, an animated solid ink path line sweeps from start to goal in 1.2 seconds to clearly illustrate the final discovered policy.
+6. **Multi-layer Reusability**: The canvas component is reused in the performance report modal with a `layer` prop (`beliefs`, `ground_truth`, `error`) and optional policy direction arrows.
 
-### 9.4 Performance Analysis Report Overlay
-When the agent solves the maze, clicking **View report** (or pressing hotkey **R**) opens a comprehensive full-screen overlay featuring:
-1. **Verdict Banner**: Clear plain-English summary sentence with pass chips.
-2. **Five KPI Tiles**: Gap to optimal, greedy success rate, episodes to learn, moves practiced, and wasted step percentage.
-3. **Learning Curve**: Steps per attempt plotted on a logarithmic y axis with a dashed BFS baseline, faint epsilon schedule, and convergence point marker.
-4. **Cumulative Regret**: Cumulative extra steps over optimal, highlighting the exact episode where the curve flattens.
-5. **Knowledge Map**: Three side-by-side canvas boards showing "What the agent believes" ($V$), "Ground truth" ($V^*$), and "Where it is wrong" ($|V - V^*|$), with a toggle for learned vs optimal policy arrows.
-6. **Policy Accuracy**: Horizontal progress bars comparing policy optimality on the path, visited squares (visit count $\ge 3$), and the entire map.
-7. **Robustness**: Noise sweep chart testing policy success under exploratory noise ($\epsilon \in [0, 0.3]$) alongside a baseline ladder comparing the random agent, learned policy, and BFS shortest path.
-8. **Reliability Benchmark**: Integrated 20-seed benchmark runner with live progress bar, interquartile mean (IQM) statistics with bootstrap confidence intervals, reliability curve, learning band curve, and parameter sensitivity grid.
-9. **Method Notes**: Mathematical definitions of $Q^*$, regret conventions, and epsilon schedules.
-10. **Export Suite**: One-click download of full JSON report, episode history CSV, and print-optimized PDF view.
+### 9.4 Visual-First Performance Report Screen
+When solved, clicking **Report** (or pressing hotkey **R**) opens an unscrollable full-screen overlay with a 200 ms fade transition:
+1. **Header Strip**: Solid ink verdict badge (`[ OPTIMAL ]`, `[ NEAR OPTIMAL ]`, `[ NOT OPTIMAL ]`, `[ FAILED ]`), four metric tiles (`Gap 0%`, `Success 100/100`, `Attempts 125`, `Moves 9,820`), a Print button calling `window.print()` with an `@media print` A4 landscape stylesheet, and a Close button (`X`).
+2. **Learning Curve Tile**: Orange line plotting steps per attempt on a logarithmic y axis, accompanied by a dashed BFS optimal baseline.
+3. **What It Learned (Hero Tile)**: Three interactive mini-maze boards showing `Learned` ($V$), `Truth` ($V^*$), and `Gap` ($|V - V^*|$), with a toggle for policy arrows.
+4. **Reliability Tile**: 20 individual seed dots plotted along the attempts axis, streaming live via WebSocket from the headless benchmark runner, with median and 95% bootstrap confidence interval markers.
+5. **Under Noise Tile**: SVG line chart comparing greedy policy success under exploratory noise ($\epsilon \in [0, 0.3]$) against a uniform random agent baseline.
+6. **Knows the Way Tile**: Three horizontal progress bars showing policy accuracy on the optimal path, on visited states ($\ge 3$ visits), and across all reachable states.
 
 ---
 

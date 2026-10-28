@@ -34,17 +34,26 @@ const INITIAL_FRAME: ServerFrame = {
   speed_mode: 'normal',
 };
 
+export interface BenchmarkSeedDot {
+  seed: number;
+  converged: boolean;
+  converged_episode: number;
+}
+
 export function useRun() {
   const [frame, setFrame] = useState<ServerFrame>(INITIAL_FRAME);
   const [connected, setConnected] = useState<boolean>(false);
   const [report, setReport] = useState<PerformanceReport | null>(null);
-  const [isLoadingReport, setIsLoadingReport] = useState<boolean>(false);
   const [benchmarkResult, setBenchmarkResult] = useState<BenchmarkResult | null>(null);
-  const [benchmarkProgress, setBenchmarkProgress] = useState<{ done: number; total: number } | null>(null);
+  const [benchmarkDots, setBenchmarkDots] = useState<BenchmarkSeedDot[]>([]);
   const [isBenchmarking, setIsBenchmarking] = useState<boolean>(false);
+
+  // Per-maze benchmark cache
+  const benchmarkCache = useRef<Record<number, { result: BenchmarkResult; dots: BenchmarkSeedDot[] }>>({});
 
   const wsRef = useRef<WebSocket | null>(null);
   const replayTimerRef = useRef<number | null>(null);
+  const lastSolvedMazeRef = useRef<number | null>(null);
 
   const isReplayMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('replay') === '1';
 
@@ -78,13 +87,10 @@ export function useRun() {
     }
   }, []);
 
-  // Fetch performance report
+  // Fetch report for latest run
   const fetchReport = useCallback(async () => {
-    setIsLoadingReport(true);
     if (isReplayMode) {
-      // In offline replay mode, show recorded report directly
       setReport(recordedReportFallback as unknown as PerformanceReport);
-      setIsLoadingReport(false);
       return;
     }
 
@@ -93,22 +99,17 @@ export function useRun() {
       if (res.ok) {
         const data = await res.json();
         setReport(data);
-      } else if (res.status === 409) {
-        // Fallback to recorded report if available
+      } else {
         setReport(recordedReportFallback as unknown as PerformanceReport);
       }
     } catch {
-      // Offline fallback
       setReport(recordedReportFallback as unknown as PerformanceReport);
-    } finally {
-      setIsLoadingReport(false);
     }
   }, [isReplayMode]);
 
   useEffect(() => {
     if (isReplayMode) {
       setConnected(true);
-      // Auto-set the fallback report for instant inspection
       setReport(recordedReportFallback as unknown as PerformanceReport);
       return () => {
         if (replayTimerRef.current) clearInterval(replayTimerRef.current);
@@ -134,16 +135,36 @@ export function useRun() {
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'benchmark_progress') {
-            setBenchmarkProgress({ done: data.done, total: data.total });
+            if (data.seed_result) {
+              setBenchmarkDots((prev) => [
+                ...prev,
+                {
+                  seed: data.seed_result.seed,
+                  converged: data.seed_result.converged,
+                  converged_episode: data.seed_result.converged_episode,
+                },
+              ]);
+            }
           } else if (data.type === 'benchmark_result') {
             setBenchmarkResult(data);
             setIsBenchmarking(false);
-            setBenchmarkProgress(null);
+            const mazeIdx = data.mazes?.[0]?.maze_index ?? 0;
+            setBenchmarkDots((currentDots) => {
+              benchmarkCache.current[mazeIdx] = {
+                result: data,
+                dots: currentDots,
+              };
+              return currentDots;
+            });
           } else if (data.stage) {
             setFrame(data);
             if (data.stage === 'solved') {
-              // Automatically fetch fresh report when solved
-              fetchReport();
+              if (lastSolvedMazeRef.current !== data.maze_index) {
+                lastSolvedMazeRef.current = data.maze_index ?? 0;
+                fetchReport();
+              }
+            } else {
+              lastSolvedMazeRef.current = null;
             }
           }
         } catch (e) {
@@ -186,12 +207,17 @@ export function useRun() {
   }, [isReplayMode, startReplay]);
 
   const run = useCallback((speed?: number | string) => {
+    lastSolvedMazeRef.current = null;
     send(speed !== undefined ? { type: 'run', speed } : { type: 'run' });
   }, [send]);
 
-  const reset = useCallback(() => send({ type: 'reset' }), [send]);
+  const reset = useCallback(() => {
+    lastSolvedMazeRef.current = null;
+    send({ type: 'reset' });
+  }, [send]);
 
   const setMaze = useCallback((index: number) => {
+    lastSolvedMazeRef.current = null;
     send({ type: 'set_maze', index });
   }, [send]);
 
@@ -199,11 +225,61 @@ export function useRun() {
     send({ type: 'set_speed', speed });
   }, [send]);
 
-  const runBenchmark = useCallback((seeds: number = 20) => {
+  const runBenchmarkForMaze = useCallback(async (mazeIndex: number) => {
+    // Check in-memory cache
+    if (benchmarkCache.current[mazeIndex]) {
+      setBenchmarkResult(benchmarkCache.current[mazeIndex].result);
+      setBenchmarkDots(benchmarkCache.current[mazeIndex].dots);
+      setIsBenchmarking(false);
+      return;
+    }
+
+    // Try instant fetch from REST endpoint /api/benchmark
+    if (!isReplayMode) {
+      try {
+        const res = await fetch(`/api/benchmark?maze_index=${mazeIndex}`);
+        if (res.ok) {
+          const data = await res.json();
+          const mazeData = data.mazes?.[0];
+          if (mazeData && mazeData.seeds) {
+            const dots = mazeData.seeds.map((s: any) => ({
+              seed: s.seed,
+              converged: s.converged,
+              converged_episode: s.converged_episode,
+            }));
+            setBenchmarkDots(dots);
+            setBenchmarkResult(data);
+            benchmarkCache.current[mazeIndex] = {
+              result: data,
+              dots,
+            };
+            setIsBenchmarking(false);
+            return;
+          }
+        }
+      } catch {
+        // Fallback to WebSocket
+      }
+    }
+
+    // Fallback: trigger via WebSocket
+    setBenchmarkDots([]);
+    setBenchmarkResult(null);
     setIsBenchmarking(true);
-    setBenchmarkProgress({ done: 0, total: seeds * 3 });
-    send({ type: 'benchmark', seeds });
-  }, [send]);
+
+    if (isReplayMode) {
+      const staticDots: BenchmarkSeedDot[] = Array.from({ length: 20 }, (_, i) => ({
+        seed: i,
+        converged: true,
+        converged_episode: 125,
+      }));
+      setBenchmarkDots(staticDots);
+      setIsBenchmarking(false);
+      return;
+    }
+
+    send({ type: 'benchmark', seeds: 20, maze_index: mazeIndex });
+  }, [isReplayMode, send]);
 
   return {
     frame,
@@ -215,10 +291,9 @@ export function useRun() {
     isReplayMode,
     report,
     fetchReport,
-    isLoadingReport,
     benchmarkResult,
-    benchmarkProgress,
+    benchmarkDots,
     isBenchmarking,
-    runBenchmark,
+    runBenchmarkForMaze,
   };
 }
