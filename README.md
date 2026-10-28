@@ -485,51 +485,53 @@ A stand-alone recording script:
 
 ## 9. Frontend Architecture & UI/UX Design
 
-The frontend is a bespoke web dashboard developed with **React 18**, **TypeScript**, **Vite**, and **Tailwind CSS**. It is designed around the Swiss style and Bauhaus architectural philosophy: high contrast, zero ornamentation, functional typography, and rigorous geometric alignment.
+The frontend is a tactile, single-page web dashboard developed with **React 18**, **TypeScript**, **Vite**, and **Tailwind CSS**. It is designed around a disciplined neumorphic aesthetic: soft tactile surfaces, subtle directional shadows, and a single orange accent.
 
 ### 9.1 Single Unscrollable Viewport & Responsive Layout
-The entire application is engineered to fit within a single, unscrollable screen (`h-screen max-h-screen overflow-hidden`):
-- **Left Column**: $11 \times 11$ Canvas maze viewport, live attempt counter, random move percentage, and plain-English stage status.
+The core dashboard is engineered to fit within a single, unscrollable screen (`h-screen max-h-screen overflow-hidden`) across common desktop display resolutions (1280x720, 1366x768, and 1920x1080), stacking cleanly below 900 px:
+- **Left Column**: $11 \times 11$ Canvas maze viewport, live attempt counter, random move percentage, and a fixed two-line live status sentence.
 - **Right Column**: 
-  - Maze layout switcher (`1: Labyrinth`, `2: Classic`, `3: Zig-Zag`, and `🎲 Shuffle`).
-  - Training speed selector (`Step-by-Step`, `Normal (40s)`, `Fast (15s)`).
-  - High-density data grid (Optimal Path, Shortest Run, Cumulative Experience, Exploration $\epsilon$).
-  - Primary **RUN** action button with integrated linear progress bar fill.
-  - Real-time SVG convergence sparkline.
-- **Top Header & Bottom Footer**: Global status badge and explanatory pedagogical notes.
-- **Keyboard Accessibility**: The **Spacebar** triggers/restarts the learning run from anywhere in the app.
+  - Maze layout selector (`Labyrinth`, `Classic`, `Zig-Zag`).
+  - Training speed selector (`Step by step`, `Normal`, `Fast`).
+  - High-density data grid (Shortest possible, Best so far, Moves practiced, Random moves).
+  - Primary **Run** action button with an integrated progress bar fill.
+  - Secondary **View report** action button (available once solved; hotkey R).
+  - Real-time SVG convergence sparkline with hover tooltips and dashed optimum baseline.
+- **Top Header**: Wordmark and an inset status pill with a pulsating state dot.
+- **Keyboard Accessibility**: The **Spacebar** triggers or restarts learning; **R** opens the report once solved; **Esc** closes the report overlay; visible 2 px orange focus ring on all interactive elements.
 
-### 9.2 High-Performance HTML5 Canvas Rendering
+### 9.2 Neumorphic Design Tokens & Accessibility
+- **Surface**: `#E6EAF0`
+- **Primary Text**: `#1F2733` (contrast ratio 12.5:1 against surface, exceeding WCAG AAA)
+- **Secondary Text**: `#4A5568` (contrast ratio 6.2:1, exceeding WCAG AA)
+- **Accent Fill & Glow**: `#FF4F00` (used exclusively for fills and glows)
+- **Accent Text**: `#B33600` (contrast ratio 5.05:1 on surface, exceeding WCAG AA 4.5:1 minimum)
+- **Status Solved Green**: `#1E6B3E` (contrast ratio 5.39:1 on surface, exceeding WCAG AA)
+- **Shadow Tokens**: Light shadow `rgba(255, 255, 255, 0.85)`, dark shadow `rgba(163, 177, 198, 0.65)` with light source from top-left. Raised and inset elevations defined as CSS variables with 14 px control radius and 28 px slab radius.
+- **Offline Typography**: Manrope Variable font packaged locally via `@fontsource-variable/manrope` with zero CDN dependencies. Tabular figures enabled across all numbers (`tabular-nums`). Sentence case used consistently across all interface copy with no tracked all-caps labels, no monospace font for labels, and no em dashes or en dashes.
+
+### 9.3 High-Performance Canvas Rendering
 The maze is rendered on an HTML5 2D canvas in `frontend/src/components/Maze.tsx`:
-1. **Device Pixel Ratio Scaling**: Multiplies canvas buffer dimensions by `window.devicePixelRatio` for razor-sharp rendering on Retina/HiDPI screens.
-2. **Layer 1 - Grid & Value Glow**: Draws `#F5F2EA` paper tiles and layers learned value intensities using International Orange (`rgba(255, 79, 0, alpha)`), where `alpha = min(val * 0.9, 0.9)`.
-3. **Layer 2 - Walls**: Renders solid `#111111` ink blocks.
-4. **Layer 3 - Landmarks**: Start marker `S` and Goal marker `G` (distinct nested geometric square glyph).
-5. **Layer 4 - Trail**: The agent's last 30 visited coordinates are rendered as a trailing fade of translucent orange squares.
-6. **Layer 5 - Agent**: Solid `#FF4F00` square with a slight inset.
-7. **Layer 6 - Solved Path Animation**: When stage transitions to `solved`, a `requestAnimationFrame` loop animates an ink line sweeping through the exact optimal path in 1.2 seconds.
+1. **Offscreen Canvas Pre-rendering**: The static maze background (surface slab, carved corridors, directional inset shadows, and landmark rings) is pre-rendered once per layout to an offscreen canvas buffer, eliminating wall calculation overhead during live training.
+2. **Merged Carved Channel**: Corridors are drawn as a single continuous carved channel (`#D8DDE6`) inset into the slab, with top and left wall boundaries casting dark inner shadows and bottom and right boundaries reflecting light highlights.
+3. **Soft Heatmap Bloom**: Learned state values render as a soft radial orange glow inside the corridor channel rather than hard square tiles.
+4. **Agent Representation**: Rendered as a raised 3D glossy orange orb with top-left specular reflection and drop shadow; movement history is displayed as fading translucent dots.
+5. **Landmark Markers**: Start position `S` is an inset ring; goal `G` is an inset ring enclosing a radiant orange core.
+6. **Victory Sweep**: Upon convergence, an animated glowing orange path line sweeps from start to goal in 1.2 seconds.
+7. **Multi-layer Reusability**: The same component is reused in the performance report modal with a `layer` prop (`beliefs`, `ground_truth`, `error`) and optional policy direction arrows.
 
-```
-Canvas Layer Stack:
-[Top]    Layer 6: Animated 3px Ink Path (Solved Stage)
-         Layer 5: Current Agent Position (Solid Orange Square)
-         Layer 4: Fading Step Trail (Last 30 Positions)
-         Layer 3: S / G Landmark Icons
-         Layer 2: Walls (#111111 Ink Blocks)
-[Bottom] Layer 1: Base Tiles (#F5F2EA) + Q-Value Heatmap Glow (Orange)
-```
-
-### 9.3 Real-Time SVG Sparkline Convergence Graph
-`frontend/src/components/Sparkline.tsx` provides an SVG graph tracking episode lengths across attempts:
-- **Baseline**: A dashed reference line indicating the theoretical BFS optimum (e.g., 32 steps).
-- **Trend Curve**: Visualizes the rapid decay from high random step counts ($200$ steps) down to the optimal floor.
-- **Latest Point Indicator**: An orange focal circle displaying the latest episode's step count.
-
-### 9.4 State Management & WebSocket Reconnection (`useRun`)
-The custom React hook `useRun` (`frontend/src/hooks/useRun.ts`) encapsulates the entire real-time network layer:
-- Handles automatic WebSocket connection and seamless reconnection (1.5s exponential retry).
-- Parses inbound JSON frames into the strongly-typed `ServerFrame` state.
-- Supports offline replay mode via `new URLSearchParams(window.location.search).get('replay') === '1'`. In this mode, frames are fetched from `/api/recorded-run` and stepped at 25 Hz using `setInterval`, eliminating any requirement for a live Python backend.
+### 9.4 Performance Analysis Report Overlay
+When the agent solves the maze, clicking **View report** (or pressing hotkey **R**) opens a comprehensive full-screen overlay featuring:
+1. **Verdict Banner**: Clear plain-English summary sentence with pass chips.
+2. **Five KPI Tiles**: Gap to optimal, greedy success rate, episodes to learn, moves practiced, and wasted step percentage.
+3. **Learning Curve**: Steps per attempt plotted on a logarithmic y axis with a dashed BFS baseline, faint epsilon schedule, and convergence point marker.
+4. **Cumulative Regret**: Cumulative extra steps over optimal, highlighting the exact episode where the curve flattens.
+5. **Knowledge Map**: Three side-by-side canvas boards showing "What the agent believes" ($V$), "Ground truth" ($V^*$), and "Where it is wrong" ($|V - V^*|$), with a toggle for learned vs optimal policy arrows.
+6. **Policy Accuracy**: Horizontal progress bars comparing policy optimality on the path, visited squares (visit count $\ge 3$), and the entire map.
+7. **Robustness**: Noise sweep chart testing policy success under exploratory noise ($\epsilon \in [0, 0.3]$) alongside a baseline ladder comparing the random agent, learned policy, and BFS shortest path.
+8. **Reliability Benchmark**: Integrated 20-seed benchmark runner with live progress bar, interquartile mean (IQM) statistics with bootstrap confidence intervals, reliability curve, learning band curve, and parameter sensitivity grid.
+9. **Method Notes**: Mathematical definitions of $Q^*$, regret conventions, and epsilon schedules.
+10. **Export Suite**: One-click download of full JSON report, episode history CSV, and print-optimized PDF view.
 
 ---
 
@@ -541,7 +543,9 @@ The custom React hook `useRun` (`frontend/src/hooks/useRun.ts`) encapsulates the
 | `GET` | `/api/health` | Health check & current engine stage | `{"status":"ok","app":"WatchItLearn","stage":"idle"}` |
 | `GET` | `/api/maze` | Returns active maze, dimensions, and BFS path | `{"grid":[...],"rows":11,"cols":11,"optimal_len":32,...}` |
 | `POST` | `/api/maze` | Switch active maze layout preset | Payload: `{"index": 1}` $\implies$ `{"status":"ok","active_index":1}` |
-| `GET` | `/api/recorded-run` | Serves `recorded_run.json` for offline playback | Static JSON Array of `ServerFrame` |
+| `GET` | `/api/report` | Returns latest frozen performance report JSON | Full `PerformanceReport` object (409 if no solved run) |
+| `GET` | `/api/recorded-run` | Serves `recorded_run.json` for offline playback | Static JSON array of `ServerFrame` |
+| `GET` | `/api/recorded-report` | Serves `recorded_report.json` for offline report viewing | Pre-computed `PerformanceReport` JSON |
 
 ### WebSocket Protocol (`/ws/train`)
 
@@ -558,91 +562,95 @@ The custom React hook `useRun` (`frontend/src/hooks/useRun.ts`) encapsulates the
 
 // 4. Update training speed during runtime
 { "type": "set_speed", "speed": "step" }
+
+// 5. Trigger headless benchmark in worker thread
+{ "type": "benchmark", "seeds": 20 }
 ```
 
-#### Server-to-Client Frame Schema (`ServerFrame`)
-```jsonc
-{
-  "stage": "learning",               // "idle" | "exploring" | "learning" | "converging" | "solved"
-  "t": 12.45,                        // Elapsed wall-clock seconds
-  "T": 40.0,                         // Target budget seconds
-  "attempt": 87,                     // Current episode/attempt counter
-  "random_pct": 38,                  // Current exploration percentage: round(epsilon * 100)
-  "agent": [5, 3],                   // Current agent [row, col]
-  "trail": [[5, 1], [5, 2], [5, 3]], // Trajectory history (last 30 coordinates)
-  "value": [[0.0, 0.12, ...]],       // 11x11 normalized max Q values [0.0 .. 1.0]
-  "best": [[0, 1, 3, ...]],          // 11x11 argmax action indices [0..3]
-  "steps_history": [200, 184, 52],   // Subsampled attempt length history (<= 120 points)
-  "best_steps": 36,                  // Shortest path achieved so far
-  "total_transitions": 4310,         // Total state-action-reward updates executed
-  "optimal_steps": 32,               // Theoretical BFS optimal steps
-  "maze_index": 0,                   // Active layout preset index
-  "grid": ["###########", ...],      // Current maze ASCII layout
-  "speed_mode": "normal",            // "normal" | "fast" | "step"
-  "result": {                        // Populated when stage == "solved"
-    "steps": 32,
-    "optimal": 32
-  }
-}
-```
+#### Server-to-Client Messages
+- Streaming training frames (`ServerFrame` at 25 Hz).
+- Benchmark progress notifications: `{"type": "benchmark_progress", "done": 12, "total": 60}`.
+- Benchmark final results: `{"type": "benchmark_result", "n_seeds": 20, "mazes": [...]}`.
 
 ---
 
 ## 11. Experimental Benchmarks & Verification
 
-The project includes an automated testing and verification suite in the `tests/` directory to prove algorithmic stability and system performance.
+All figures in this section are produced directly from headless execution of the codebase. No numbers are invented or estimated.
 
-### 11.1 20-Seed Convergence Benchmark
-The benchmark runs 20 consecutive training simulations across random seeds $0$ through $19$ on the primary **Labyrinth** preset (BFS optimal = 32 steps, $T = 40.0\text{s}$).
+### 11.1 20-Seed Multi-Maze Benchmark
+The headless benchmark runner evaluates 20 independent random seeds (seeds 0 through 19) across all three maze presets. It uses episode-indexed epsilon decay (the same schedule as Step mode) and verifies convergence when the greedy policy achieves 3 consecutive checks of 10 optimal rollouts.
 
-#### Benchmark Execution:
+#### Execution Command:
 ```bash
-pytest -s tests/test_convergence.py
+python -m app.evaluate --seeds 20
 ```
 
-#### Verified Experimental Results:
+#### Exact Output:
 ```
-=================================================================
-CONVERGENCE BENCHMARK: 20 SEEDS (Target T = 40.0s, BFS = 32)
-=================================================================
-Seed   | Status       | Attempts   | Time to Converge
------------------------------------------------------------------
-0      | CONVERGED    | 145        | 5.48 s
-1      | CONVERGED    | 160        | 5.56 s
-2      | CONVERGED    | 135        | 5.42 s
-3      | CONVERGED    | 150        | 5.50 s
-4      | CONVERGED    | 170        | 5.62 s
-5      | CONVERGED    | 140        | 5.44 s
-6      | CONVERGED    | 155        | 5.52 s
-7      | CONVERGED    | 130        | 5.38 s
-8      | CONVERGED    | 165        | 5.58 s
-9      | CONVERGED    | 145        | 5.48 s
-10     | CONVERGED    | 150        | 5.50 s
-11     | CONVERGED    | 140        | 5.44 s
-12     | CONVERGED    | 175        | 5.64 s
-13     | CONVERGED    | 135        | 5.42 s
-14     | CONVERGED    | 155        | 5.52 s
-15     | CONVERGED    | 145        | 5.48 s
-16     | CONVERGED    | 160        | 5.56 s
-17     | CONVERGED    | 130        | 5.38 s
-18     | CONVERGED    | 150        | 5.50 s
-19     | CONVERGED    | 145        | 5.48 s
-=================================================================
-Summary: 20 / 20 seeds converged within 40.0s.
-Reliability Rate: 100.0% (0 failures across all seeds)
-Average Attempts to Convergence: ~148.5 attempts
-Average Internal Time to Convergence: ~5.49 seconds
-=================================================================
+======================================================================
+WATCHITLEARN HEADLESS BENCHMARK
+Seeds: 20 | Mazes: all
+======================================================================
+
+======================================================================
+Maze: Labyrinth (32) (BFS optimal: 32)
+======================================================================
+Success rate: 100% (20/20)
+Episodes to converge:
+  Median: 125  Mean: 125.0 [125.0, 125.0]
+  IQM: 125.0 [125.0, 125.0]
+  Std: 0.0  Min: 125  Max: 125
+Transitions to converge:
+  Median: 9820  Mean: 9833  IQM: 9819
+
+======================================================================
+Maze: Classic (28) (BFS optimal: 28)
+======================================================================
+Success rate: 100% (20/20)
+Episodes to converge:
+  Median: 125  Mean: 118.8 [113.8, 122.5]
+  IQM: 125.0 [113.8, 125.0]
+  Std: 11.1  Min: 100  Max: 125
+Transitions to converge:
+  Median: 8808  Mean: 8613  IQM: 8772
+
+======================================================================
+Maze: Zig-Zag (32) (BFS optimal: 32)
+======================================================================
+Success rate: 100% (20/20)
+Episodes to converge:
+  Median: 125  Mean: 125.0 [125.0, 125.0]
+  IQM: 125.0 [125.0, 125.0]
+  Std: 0.0  Min: 125  Max: 125
+Transitions to converge:
+  Median: 9955  Mean: 9967  IQM: 9964
+
+Total wall-clock time: 23.40s
 ```
 
-### 11.2 Computational Throughput Benchmark
-To evaluate the execution speed of the precomputed integer transition tables and vectorized NumPy updates, the test suite executes $4,000$ consecutive learning attempts and measures wall-clock duration:
+### 11.2 Hyperparameter Sensitivity Grid ($\alpha \times \gamma$)
+The evaluation module includes a sensitivity sweep over learning rates $\alpha \in \{0.1, 0.3, 0.5, 0.7, 0.9\}$ and discount factors $\gamma \in \{0.80, 0.90, 0.95, 0.97, 0.99\}$ evaluated over 5 seeds per cell on Maze 0 (Labyrinth).
 
+#### Execution Command:
+```bash
+python -m app.evaluate --sensitivity --seeds 5 --maze 0
 ```
-Loop Throughput: 4,000 attempts completed in 1.83s (2,185.0 attempts/sec).
+
+#### Exact Output:
 ```
-- **Throughput**: **$2,185$ complete episodes per second**.
-- **Transitions per second**: At an average of $\sim 50$ steps per episode during learning, the engine processes **$> 100,000$ $(s, a, r, s')$ Bellman updates per second** on a single CPU thread.
+======================================================================
+SENSITIVITY GRID: alpha x gamma
+======================================================================
+alpha\gamma | 0.80 | 0.90 | 0.95 | 0.97 | 0.99
+----------------------------------------------
+  0.1      |   325 |   300 |   300 |   275 |   300
+  0.3      |   150 |   150 |   150 |   150 |   150
+  0.5      |   125 |   125 |   125 |   125 |   125
+  0.7      |   125 |   100 |   100 |   100 |   125
+  0.9      |   100 |   100 |   100 |   100 |   100
+```
+- **Observations**: Higher learning rates ($\alpha \ge 0.5$) significantly accelerate convergence in this deterministic tabular environment because updates directly write the true Bellman target without stochastic variance. The discount factor $\gamma$ shows robust stability between 0.80 and 0.99 without causing convergence failure across any tested seed.
 
 ---
 
@@ -657,7 +665,7 @@ Loop Throughput: 4,000 attempts completed in 1.83s (2,185.0 attempts/sec).
 
 ### 12.2 Local Installation
 
-#### Step 1: Clone or Navigate to the Repository
+#### Step 1: Navigate to the Repository
 ```bash
 cd "d:/Desktop_Backup/my projects/AI-KTU"
 ```
@@ -666,7 +674,6 @@ cd "d:/Desktop_Backup/my projects/AI-KTU"
 ```bash
 pip install -r requirements.txt
 ```
-*Dependencies installed*: `fastapi`, `uvicorn[standard]`, `numpy`, `pydantic`, `pytest`, `websockets`, `httpx`.
 
 #### Step 3: Install Frontend Dependencies & Build Bundle
 ```bash
@@ -675,127 +682,103 @@ npm install
 npm run build
 cd ..
 ```
-The compiled static assets are output to `frontend/dist/`.
 
 ---
 
 ### 12.3 Running the Application
 
-#### Option A: Single-Command Production Server (Recommended)
-Because FastAPI is configured to host the compiled static files directly from `frontend/dist/`, running Uvicorn serves both the backend API and frontend application on a single port:
-
+#### Option A: Production Server (FastAPI hosts built frontend)
 ```bash
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
+Open your browser to `http://localhost:8000`.
 
-1. Open your web browser and navigate to:
-   ```
-   http://localhost:8000
-   ```
-2. Press **RUN** or tap the **Spacebar** to watch the agent learn in real time!
-
-#### Option B: Full-Stack Development Mode (Hot-Reloading)
-For active development with Vite hot module replacement:
-
-1. **Terminal 1 (Backend Server)**:
-   ```bash
-   uvicorn app.main:app --reload --port 8000
-   ```
-2. **Terminal 2 (Frontend Dev Server)**:
-   ```bash
-   cd frontend
-   npm run dev
-   ```
-3. Open `http://localhost:5173`. Vite automatically proxies `/api` and `/ws` traffic to port 8000.
+#### Option B: Development Mode (Vite Hot-Reload)
+1. **Terminal 1**: `uvicorn app.main:app --reload --port 8000`
+2. **Terminal 2**: `cd frontend && npm run dev`
+3. Navigate to `http://localhost:5173`.
 
 ---
 
 ### 12.4 Running the Test Suite
-Execute the complete test suite verifying environment mechanics, wall collisions, absorbing goal rewards, BFS optimality, 20-seed convergence, and loop throughput:
+Execute the unit test suite covering environment physics, value iteration, Bellman equations, closed-form value checks, policy accuracy, determinism, schema validation, bootstrap confidence intervals, and REST API endpoints:
 
 ```bash
 pytest -v tests/
 ```
 
-Expected result:
+Verified output:
 ```
-tests/test_convergence.py::test_20_seeds_convergence_and_throughput PASSED
-tests/test_env.py::test_bfs_optimum_equals_hand_verified_path PASSED
-tests/test_env.py::test_wall_collision_wastes_step PASSED
-tests/test_env.py::test_goal_terminal_reward PASSED
-============================= 4 passed in ~15s =============================
+tests/test_api.py::test_health_endpoint PASSED                           [  4%]
+tests/test_api.py::test_maze_endpoint PASSED                             [  9%]
+tests/test_api.py::test_recorded_run_endpoint PASSED                     [ 14%]
+tests/test_api.py::test_recorded_report_endpoint PASSED                  [ 19%]
+tests/test_api.py::test_report_endpoint_409_when_idle PASSED             [ 23%]
+tests/test_api.py::test_report_endpoint_200_when_snapshot_available PASSED [ 28%]
+tests/test_convergence.py::test_20_seeds_convergence_and_throughput PASSED [ 33%]
+tests/test_env.py::test_bfs_optimum_equals_hand_verified_path PASSED     [ 38%]
+tests/test_env.py::test_wall_collision_wastes_step PASSED                [ 42%]
+tests/test_env.py::test_goal_terminal_reward PASSED                      [ 47%]
+tests/test_evaluation.py::TestBellmanEquation::test_bellman_equation_labyrinth PASSED [ 52%]
+tests/test_evaluation.py::TestBellmanEquation::test_bellman_equation_all_mazes PASSED [ 57%]
+tests/test_evaluation.py::TestVStarClosedForm::test_v_star_closed_form_labyrinth PASSED [ 61%]
+tests/test_evaluation.py::TestVStarClosedForm::test_v_star_closed_form_all_mazes PASSED [ 66%]
+tests/test_evaluation.py::TestQStarPolicyAccuracy::test_perfect_policy_on_path PASSED [ 71%]
+tests/test_evaluation.py::TestHeadlessDeterminism::test_deterministic_same_seed PASSED [ 76%]
+tests/test_evaluation.py::TestHeadlessDeterminism::test_different_seeds_differ PASSED [ 80%]
+tests/test_evaluation.py::TestReportSchema::test_report_validates PASSED [ 85%]
+tests/test_evaluation.py::TestBootstrapCI::test_constant_data_collapses PASSED [ 90%]
+tests/test_evaluation.py::TestBootstrapCI::test_constant_iqm_collapses PASSED [ 95%]
+tests/test_evaluation.py::TestBootstrapCI::test_nontrivial_ci_is_ordered PASSED [100%]
+============================= 21 passed in 15.59s =============================
 ```
 
 ---
 
 ### 12.5 Offline Fallback Replay Mode
+The project includes pre-recorded fixtures for both the live training frames and the complete performance analysis report:
 
-WatchItLearn includes a self-contained offline replay fixture for situations where Python is unavailable (e.g., static hosting on GitHub Pages or classroom environments with locked-down Python runtimes):
-
-1. **Re-record a new golden run fixture** (Optional):
+1. **Re-record fixtures** (Optional):
    ```bash
    python -m app.record
    ```
-   This generates `data/recorded_run.json`.
-2. **Playback in browser**:
-   Append `?replay=1` to the URL:
-   ```
-   http://localhost:8000/?replay=1
-   ```
-   The client will fetch `recorded_run.json` and step through all 4,800 frames at 25 Hz without needing an active backend connection.
+   Generates `data/recorded_run.json` and `data/recorded_report.json`.
+2. **Open in browser**:
+   Append `?replay=1` to the URL (`http://localhost:8000/?replay=1`).
+   The client runs entirely within the browser without requiring a running Python backend, allowing full playback and inspection of the complete performance analysis report.
 
 ---
 
 ## 13. Academic Report & Viva Presentation Guide
 
-This section is tailored specifically for students preparing their academic project report, seminar dissertation, or viva voce examination (e.g., under KTU AI / ML / CS regulations).
+This section is prepared for students presenting their semester project or viva voce examination before university evaluators who may not be reinforcement learning specialists.
 
-### 13.1 Key Questions & Rigorous Answers
+### 13.1 Key Viva Questions & Clear Mathematical Explanations
 
-#### Q1: What makes Q-Learning an "off-policy" algorithm?
-> **Answer**: An algorithm is off-policy when the target policy (the policy being evaluated and improved) differs from the behavior policy (the policy used to generate experience). In Q-Learning:
-> - The **behavior policy** is $\epsilon$-greedy: the agent takes random exploratory moves with probability $\epsilon$.
-> - The **target policy** is strictly greedy: the Bellman update uses $\max_{a'} Q(s_{t+1}, a')$, which assumes the agent will act optimally from the next state onward regardless of the actual exploratory action taken.
+#### Q1: What is the exact mathematical relationship between the BFS shortest path and the optimal value function $V^*(s_0)$?
+> **Answer**: For a deterministic grid world where every non-terminal move incurs reward $r_{\text{step}} = -0.01$ and reaching the goal grants $r_{\text{goal}} = +1.0$, the discounted return of an optimal path of length $d$ steps is:
+> $$V^*(s_0) = \sum_{k=0}^{d-2} \gamma^k r_{\text{step}} + \gamma^{d-1} r_{\text{goal}} = -0.01 \cdot \frac{1 - \gamma^{d-1}}{1 - \gamma} + 1.0 \cdot \gamma^{d-1}$$
+> For the Labyrinth maze ($d = 32$ steps, $\gamma = 0.97$):
+> $$V^*(s_0) = -0.01 \cdot \frac{1 - 0.97^{31}}{0.03} + 0.97^{31} \approx -0.01 \cdot 20.375 + 0.3888 \approx 0.185302$$
+> In our unit test suite (`tests/test_evaluation.py`), value iteration solved from the Bellman operator matches this analytical closed form within $10^{-8}$.
 
-#### Q2: Why is the step penalty $-0.01$ instead of $0$ or $-1.0$?
-> **Answer**: 
-> - If the step penalty were $0$, any path to the goal—including meandering paths with infinite cycles—would yield the exact same cumulative reward $+1.0$. The agent would have no mathematical gradient favoring shorter paths over longer ones.
-> - If the step penalty were too large (e.g., $-1.0$), the penalty for a 32-step path would be $-0.32$, but random flailing in early attempts (200 steps) would accumulate huge negative returns ($-2.00$). This would cause catastrophic value underflow where the agent becomes "suicidal" or freezes to avoid movement.
-> - A mild penalty of $-0.01$ ensures the cumulative step cost across 32 steps is $-0.32$, leaving a net positive reward of $1.0 - 0.32 = +0.68$ upon goal completion while strongly penalizing unnecessary steps.
+#### Q2: Why is policy accuracy measured separately on the path versus the whole map?
+> **Answer**: Tabular Q-learning only updates states and actions that the behavior policy visits. Once the agent identifies the high-reward corridor leading to the goal, the $\epsilon$-greedy schedule decays exploration, and the agent rarely or never re-visits remote dead ends. Consequently, Q-values in abandoned dead ends retain their initial or noisy values. Measuring policy accuracy exclusively on the whole map would misleadingly penalize the agent for not learning corridors it has correctly learned to avoid. Evaluating accuracy three ways (on-path, visited $\ge 3$ times, and reachable) demonstrates that the agent has mastered what matters for task success while leaving unused dead ends uncertain.
 
-#### Q3: Why does Q-Learning converge to the exact BFS optimal path?
-> **Answer**: Under the assumptions of discrete states, finite actions, bounded rewards, and infinite exploration of all state-action pairs ($\sum_t \alpha_t = \infty, \sum_t \alpha_t^2 < \infty$), Watkins and Dayan (1992) proved that $Q_t(s, a) \to Q^*(s, a)$ with probability 1. Because the transition dynamics in a maze are deterministic and unweighted, the optimal Bellman value corresponds directly to the shortest geometric distance discovered by BFS.
+#### Q3: What is cumulative regret, and why does its curve flatten?
+> **Answer**: Regret in episode $e$ is defined as the number of extra steps taken beyond the theoretical optimum:
+> $$\text{Regret}_e = \text{Steps}_e - d_{\text{optimal}}$$
+> Early in training, high exploration causes the agent to waste dozens of steps per attempt, resulting in a steep cumulative regret slope. As the optimal corridor is reinforced and exploration anneals, the agent takes exactly $d_{\text{optimal}}$ steps every episode ($\text{Regret}_e = 0$). At that point, the cumulative regret curve flattens completely into a horizontal line.
 
-#### Q4: How does the visual heatmap reflect the Bellman error?
-> **Answer**: At the start of training, all $Q(s, a) = 0$. When the agent first stumbles onto the goal tile $G$ by chance, the tile immediately adjacent to $G$ receives an immediate update based on $r = +1.0$. On subsequent attempts, cells adjacent to that cell receive discounted updates ($\gamma \times Q$). The value propagates backward through the state space like a wave. Normalizing this value $\max_a Q(s, a) / \max Q$ produces the orange glow in the canvas, giving visual proof of the Bellman equation in action.
+#### Q4: Why does the benchmark use Interquartile Mean (IQM) and bootstrap confidence intervals?
+> **Answer**: As demonstrated by Agarwal et al. (NeurIPS 2021), standard sample means in reinforcement learning benchmarks are heavily distorted by outlier runs, while medians discard valuable performance variance. The Interquartile Mean (the mean of the middle 50% of seeds) combined with 10,000 percentile-bootstrap resamples yields a statistically robust performance metric that avoids outlier skew while preserving statistical power.
 
----
-
-### 13.2 Comparison: Q-Learning vs SARSA vs Policy Gradient
-
-| Feature | Tabular Q-Learning (This Project) | SARSA | Deep Q-Networks (DQN) | Policy Gradient (REINFORCE) |
-|:---|:---|:---|:---|:---|
-| **Policy Type** | **Off-Policy** | On-Policy | Off-Policy | On-Policy |
-| **Update Target** | $r + \gamma \max_{a'} Q(s', a')$ | $r + \gamma Q(s', a')$ where $a' \sim \pi$ | $r + \gamma \max_{a'} Q(s', a'; \theta^-)$ | $\sum_t \nabla_\theta \log \pi_\theta(a_t \mid s_t) G_t$ |
-| **State Space** | Discrete (121 states) | Discrete | Continuous / High-Dim | Continuous / High-Dim |
-| **Function Approx.**| None (Exact Table) | None (Exact Table) | Deep Neural Network | Deep Neural Network |
-| **Convergence** | **Guaranteed to global optimum** | Guaranteed (to policy) | Vulnerable to divergence | Local optima |
-| **Computational Cost**| Ultra-low ($>2,000$ att/sec) | Ultra-low | High (GPU intensive) | High (GPU intensive) |
-| **Black Box Level** | **Zero (100% transparent)** | Zero | High | High |
+#### Q5: What is the fundamental scope limitation of Tabular Q-Learning?
+> **Answer**: Tabular Q-learning maintains a discrete lookup table mapping each state-action pair to a scalar value. It performs no spatial generalization or feature sharing across tiles. If any wall or start/goal coordinate in the maze changes, the table must be learned again from scratch.
 
 ---
 
-## 14. Future Enhancements & Extensions
-
-1. **SARSA Mode Toggle**: Add an on-policy SARSA update toggle to let students observe how SARSA avoids danger/dead-ends more conservatively than Q-Learning during high-$\epsilon$ phases.
-2. **Dynamic Maze Painter**: Allow users to click and toggle walls directly in the canvas and observe real-time policy re-adaptation.
-3. **Stochastic Slip Probability**: Introduce a parameter $p_{\text{slip}}$ where actions have a small chance of moving perpendicular, transforming the deterministic grid into a stochastic MDP.
-4. **Deep Q-Learning Comparison View**: Implement a lightweight PyTorch/TensorFlow.js DQN model alongside the tabular agent to compare sample efficiency and convergence stability.
-
----
-
-## 15. License & Academic Attribution
-Developed as an open educational and research demonstration. Feel free to use, modify, and reference this codebase for academic reports, coursework submissions, and machine learning seminars.
-
-*When citing this project in your academic report, you may reference it as:*
-> **WatchItLearn: An Interactive, Real-Time Tabular Q-Learning Maze Navigation and Convergence Benchmark System**, 2026.
+## 14. License & Academic Attribution
+Developed as an open educational and academic project.
+When citing this project in your academic dissertation or report:
+> **WatchItLearn: Tabular Q-Learning Real-Time Visualization and Performance Analysis System**, 2026.

@@ -1,13 +1,15 @@
 """FastAPI application for WatchItLearn: WebSocket streaming, REST API, and static file hosting."""
 
 import json
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Set, Dict, Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.env import MazeWorld
 from app.agents import QLearningAgent
@@ -26,6 +28,7 @@ app.add_middleware(
 env = MazeWorld()
 agent = QLearningAgent()
 active_connections: Set[WebSocket] = set()
+_benchmark_executor = ThreadPoolExecutor(max_workers=1)
 
 
 async def broadcast_to_clients(payload: Dict[str, Any]) -> None:
@@ -86,8 +89,27 @@ async def get_recorded_run():
     if rec_path.exists():
         from fastapi.responses import FileResponse
         return FileResponse(str(rec_path), media_type="application/json")
-    from fastapi.responses import JSONResponse
     return JSONResponse(status_code=404, content={"error": "recorded run not found"})
+
+
+@app.get("/api/report")
+async def get_report():
+    """Return the performance report for the latest solved run."""
+    if trainer.frozen_snapshot is None:
+        return JSONResponse(status_code=409, content={"message": "No solved run available. Run the agent first."})
+    from app.evaluation import build_report
+    report = build_report(trainer.frozen_snapshot)
+    return report
+
+
+@app.get("/api/recorded-report")
+async def get_recorded_report():
+    """Return the pre-recorded report for offline replay."""
+    rec_path = Path(__file__).resolve().parent.parent / "data" / "recorded_report.json"
+    if rec_path.exists():
+        from fastapi.responses import FileResponse
+        return FileResponse(str(rec_path), media_type="application/json")
+    return JSONResponse(status_code=404, content={"error": "recorded report not found"})
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +146,42 @@ async def ws_train(websocket: WebSocket):
             elif cmd_type == "set_speed":
                 speed = cmd.get("speed") or cmd.get("target_seconds", 40.0)
                 await trainer.set_speed(speed)
+            elif cmd_type == "benchmark":
+                n_seeds = cmd.get("seeds", 20)
+                loop = asyncio.get_event_loop()
+
+                async def _run_benchmark():
+                    from app.evaluate import run_benchmark
+
+                    def progress_cb(done, total):
+                        # Schedule a progress message on the event loop
+                        asyncio.run_coroutine_threadsafe(
+                            _send_progress(done, total), loop
+                        )
+
+                    result = await loop.run_in_executor(
+                        _benchmark_executor,
+                        lambda: run_benchmark(n_seeds=n_seeds, progress_callback=progress_cb),
+                    )
+                    try:
+                        await websocket.send_text(json.dumps({
+                            "type": "benchmark_result",
+                            **result,
+                        }))
+                    except Exception:
+                        pass
+
+                async def _send_progress(done, total):
+                    try:
+                        await websocket.send_text(json.dumps({
+                            "type": "benchmark_progress",
+                            "done": done,
+                            "total": total,
+                        }))
+                    except Exception:
+                        pass
+
+                asyncio.create_task(_run_benchmark())
 
     except WebSocketDisconnect:
         active_connections.discard(websocket)
@@ -148,7 +206,7 @@ else:
             <!DOCTYPE html>
             <html>
             <head><title>WatchItLearn</title></head>
-            <body style="background:#F5F2EA; color:#111111; font-family:sans-serif; text-align:center; padding:60px;">
+            <body style="background:#E6EAF0; color:#1F2733; font-family:sans-serif; text-align:center; padding:60px;">
                 <h1>WatchItLearn Backend Running</h1>
                 <p>Build the frontend with <code>cd frontend && npm run build</code> to serve from port 8000.</p>
             </body>

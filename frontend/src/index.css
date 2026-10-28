@@ -1,10 +1,120 @@
+@import '@fontsource-variable/manrope';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* Refined Neumorphic Surface Tokens */
+    --neu-surface: #E6EAF0;
+    --neu-surface-subtle: #EBF0F6;
+    --neu-light: rgba(255, 255, 255, 0.95);
+    --neu-dark: rgba(160, 175, 195, 0.45);
+    --neu-text: #1A202C;
+    --neu-text-secondary: #5A6A80;
+    --neu-accent: #FF4F00;
+    --neu-accent-text: #B33600; /* WCAG AA >= 4.5:1 */
+    --neu-green: #1E6B3E; /* WCAG AA >= 4.5:1 */
+
+    /* Soft, tactile raised shadows */
+    --shadow-raised-sm: 2px 2px 5px var(--neu-dark), -2px -2px 5px var(--neu-light);
+    --shadow-raised-md: 4px 4px 10px var(--neu-dark), -4px -4px 10px var(--neu-light);
+    --shadow-raised-lg: 8px 8px 20px var(--neu-dark), -8px -8px 20px var(--neu-light);
+
+    /* Soft inset shadows */
+    --shadow-inset-sm: inset 2px 2px 4px var(--neu-dark), inset -2px -2px 4px var(--neu-light);
+    --shadow-inset-md: inset 3px 3px 6px var(--neu-dark), inset -3px -3px 6px var(--neu-light);
+
+    /* Radii */
+    --radius-control: 12px;
+    --radius-slab: 24px;
+
+    /* Font */
+    --font-family: 'Manrope Variable', 'Manrope', system-ui, sans-serif;
+  }
+
   body {
-    @apply bg-[#F5F2EA] text-[#111111] font-sans antialiased;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background: var(--neu-surface);
+    color: var(--neu-text);
+    font-family: var(--font-family);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "tnum";
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* Subtle raised surface */
+  .neu-raised-sm {
+    box-shadow: var(--shadow-raised-sm);
+    border-radius: var(--radius-control);
+  }
+  .neu-raised-md {
+    box-shadow: var(--shadow-raised-md);
+    border-radius: var(--radius-control);
+  }
+  .neu-raised-lg {
+    box-shadow: var(--shadow-raised-lg);
+    border-radius: var(--radius-slab);
+  }
+
+  /* Subtle inset surface */
+  .neu-inset-sm {
+    box-shadow: var(--shadow-inset-sm);
+    border-radius: var(--radius-control);
+  }
+  .neu-inset-md {
+    box-shadow: var(--shadow-inset-md);
+    border-radius: var(--radius-control);
+  }
+
+  /* Focus ring */
+  .neu-focus:focus-visible {
+    outline: 2px solid var(--neu-accent);
+    outline-offset: 2px;
+  }
+
+  /* Status pulse */
+  @keyframes pulse-slow {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.92); }
+  }
+  .dot-pulse {
+    animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+/* Print stylesheet */
+@media print {
+  body {
+    background: white !important;
+    color: #000 !important;
+  }
+  .neu-raised-sm, .neu-raised-md, .neu-raised-lg,
+  .neu-inset-sm, .neu-inset-md {
+    box-shadow: none !important;
+    border: 1px solid #ddd !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  @page {
+    size: A4;
+    margin: 1.5cm;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .dot-pulse {
+    animation: none;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
   }
 }

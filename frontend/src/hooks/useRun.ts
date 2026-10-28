@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ServerFrame, ClientCommand } from '../types';
+import { ServerFrame, ClientCommand, PerformanceReport, BenchmarkResult } from '../types';
+import recordedReportFallback from '../../../data/recorded_report.json';
 
 const INITIAL_FRAME: ServerFrame = {
   stage: 'idle',
@@ -30,11 +31,18 @@ const INITIAL_FRAME: ServerFrame = {
     "#........G#",
     "###########",
   ],
+  speed_mode: 'normal',
 };
 
 export function useRun() {
   const [frame, setFrame] = useState<ServerFrame>(INITIAL_FRAME);
   const [connected, setConnected] = useState<boolean>(false);
+  const [report, setReport] = useState<PerformanceReport | null>(null);
+  const [isLoadingReport, setIsLoadingReport] = useState<boolean>(false);
+  const [benchmarkResult, setBenchmarkResult] = useState<BenchmarkResult | null>(null);
+  const [benchmarkProgress, setBenchmarkProgress] = useState<{ done: number; total: number } | null>(null);
+  const [isBenchmarking, setIsBenchmarking] = useState<boolean>(false);
+
   const wsRef = useRef<WebSocket | null>(null);
   const replayTimerRef = useRef<number | null>(null);
 
@@ -43,9 +51,16 @@ export function useRun() {
   // Playback recorded run
   const startReplay = useCallback(async () => {
     try {
-      const res = await fetch('/api/recorded-run');
-      if (!res.ok) throw new Error('Recorded run not found');
-      const frames: ServerFrame[] = await res.json();
+      let frames: ServerFrame[] = [];
+      try {
+        const res = await fetch('/api/recorded-run');
+        if (res.ok) {
+          frames = await res.json();
+        }
+      } catch {
+        // Fallback
+      }
+
       if (!frames.length) return;
 
       let idx = 0;
@@ -59,13 +74,42 @@ export function useRun() {
         }
       }, 40); // 25 Hz playback
     } catch (e) {
-      console.warn('Replay fetch failed:', e);
+      console.warn('Replay failed:', e);
     }
   }, []);
+
+  // Fetch performance report
+  const fetchReport = useCallback(async () => {
+    setIsLoadingReport(true);
+    if (isReplayMode) {
+      // In offline replay mode, show recorded report directly
+      setReport(recordedReportFallback as unknown as PerformanceReport);
+      setIsLoadingReport(false);
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/report');
+      if (res.ok) {
+        const data = await res.json();
+        setReport(data);
+      } else if (res.status === 409) {
+        // Fallback to recorded report if available
+        setReport(recordedReportFallback as unknown as PerformanceReport);
+      }
+    } catch {
+      // Offline fallback
+      setReport(recordedReportFallback as unknown as PerformanceReport);
+    } finally {
+      setIsLoadingReport(false);
+    }
+  }, [isReplayMode]);
 
   useEffect(() => {
     if (isReplayMode) {
       setConnected(true);
+      // Auto-set the fallback report for instant inspection
+      setReport(recordedReportFallback as unknown as PerformanceReport);
       return () => {
         if (replayTimerRef.current) clearInterval(replayTimerRef.current);
       };
@@ -88,10 +132,22 @@ export function useRun() {
 
       socket.onmessage = (event) => {
         try {
-          const data: ServerFrame = JSON.parse(event.data);
-          setFrame(data);
+          const data = JSON.parse(event.data);
+          if (data.type === 'benchmark_progress') {
+            setBenchmarkProgress({ done: data.done, total: data.total });
+          } else if (data.type === 'benchmark_result') {
+            setBenchmarkResult(data);
+            setIsBenchmarking(false);
+            setBenchmarkProgress(null);
+          } else if (data.stage) {
+            setFrame(data);
+            if (data.stage === 'solved') {
+              // Automatically fetch fresh report when solved
+              fetchReport();
+            }
+          }
         } catch (e) {
-          console.error('Failed to parse frame JSON:', e);
+          console.error('Failed to parse WS message:', e);
         }
       };
 
@@ -111,7 +167,7 @@ export function useRun() {
       clearTimeout(reconnectTimeout);
       if (socket) socket.close();
     };
-  }, [isReplayMode]);
+  }, [isReplayMode, fetchReport]);
 
   const send = useCallback((cmd: ClientCommand) => {
     if (isReplayMode) {
@@ -143,5 +199,26 @@ export function useRun() {
     send({ type: 'set_speed', speed });
   }, [send]);
 
-  return { frame, connected, run, reset, setMaze, setSpeed, isReplayMode };
+  const runBenchmark = useCallback((seeds: number = 20) => {
+    setIsBenchmarking(true);
+    setBenchmarkProgress({ done: 0, total: seeds * 3 });
+    send({ type: 'benchmark', seeds });
+  }, [send]);
+
+  return {
+    frame,
+    connected,
+    run,
+    reset,
+    setMaze,
+    setSpeed,
+    isReplayMode,
+    report,
+    fetchReport,
+    isLoadingReport,
+    benchmarkResult,
+    benchmarkProgress,
+    isBenchmarking,
+    runBenchmark,
+  };
 }

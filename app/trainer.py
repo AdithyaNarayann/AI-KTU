@@ -1,6 +1,7 @@
 """Pacing manager, convergence detector, and WebSocket frame generator for WatchItLearn."""
 
 import asyncio
+import copy
 import time
 from typing import Callable, Optional, Dict, Any, List, Tuple
 from collections import deque
@@ -20,6 +21,7 @@ from app.config import (
     CONVERGENCE_ROLLOUTS,
     CONVERGENCE_STREAK_REQUIRED,
     MAX_TIMEOUT_SECONDS,
+    NUM_STATES,
     StageType,
 )
 from app.env import MazeWorld, decode
@@ -53,8 +55,48 @@ class Trainer:
         self.total_transitions: int = 0
         self.speed_mode: str = "normal"  # "normal" | "fast" | "step"
 
+        # Episode logging for performance report (A1)
+        self.episode_log: List[Dict[str, Any]] = []
+        self.visit_counts: np.ndarray = np.zeros(NUM_STATES, dtype=np.int32)
+        self.frozen_snapshot: Optional[Any] = None  # TrainingSnapshot, set on solve
+
         self._loop_task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
+
+    def _log_episode(
+        self,
+        steps: int,
+        reached_goal: bool,
+        episode_return: float,
+        wall_bumps: int,
+        epsilon: float,
+    ) -> None:
+        """Record a single episode to the full episode log."""
+        self.episode_log.append({
+            'index': len(self.episode_log),
+            'steps': steps,
+            'reached_goal': reached_goal,
+            'return': round(episode_return, 6),
+            'wall_bumps': wall_bumps,
+            'epsilon_at_start': round(epsilon, 6),
+            'cumulative_transitions': self.total_transitions,
+        })
+
+    def _freeze_snapshot(self) -> None:
+        """Freeze a snapshot of the current training state for the report."""
+        from app.evaluation import TrainingSnapshot
+        # Mark the last episode as the convergence point
+        if self.episode_log:
+            self.episode_log[-1]['converged'] = True
+        self.frozen_snapshot = TrainingSnapshot(
+            env=self.env,
+            q_table=self.agent.q_table,
+            episode_log=self.episode_log,
+            visit_counts=self.visit_counts,
+            maze_index=self.maze_index,
+            seed=42,  # default seed
+            speed_mode=self.speed_mode,
+        )
 
     async def broadcast(self, payload: Dict[str, Any]) -> None:
         """Send message through WebSocket callback."""
@@ -195,6 +237,8 @@ class Trainer:
         self.consecutive_converged = 0
         self.is_solved = False
         self.final_result = None
+        self.episode_log = []
+        self.visit_counts = np.zeros(NUM_STATES, dtype=np.int32)
 
         self.agent.set_seed(seed)
         self.agent.reset_table()
@@ -222,6 +266,8 @@ class Trainer:
         self.final_result = None
         self.best_steps = None
         self.total_transitions = 0
+        self.episode_log = []
+        self.visit_counts = np.zeros(NUM_STATES, dtype=np.int32)
         self.agent.reset_table()
 
         # Emit idle frame
@@ -272,6 +318,8 @@ class Trainer:
                     trail = [(r, c)]
                     steps = 0
                     eps = self.compute_epsilon()
+                    ep_return = 0.0
+                    ep_wall_bumps = 0
 
                     while steps < MAX_ATTEMPT_STEPS and not self._stop_event.is_set():
                         self.t = time.monotonic() - start_wall
@@ -279,6 +327,10 @@ class Trainer:
                         next_s, reward, done = self.env.step(s, a)
                         steps += 1
                         self.total_transitions += 1
+                        ep_return += reward
+                        if next_s == s and not done:
+                            ep_wall_bumps += 1
+                        self.visit_counts[s] += 1
 
                         self.agent.update(s, a, reward, next_s, done)
                         nr, nc = decode(next_s)
@@ -298,11 +350,14 @@ class Trainer:
 
                         await asyncio.sleep(step_dt)
 
+                    reached_goal = (s == self.env.goal_state)
                     self.steps_history.append(steps)
+                    self._log_episode(steps, reached_goal, ep_return, ep_wall_bumps, eps)
 
                     # Convergence check after attempt 15
                     if self.attempt >= 15 and self.attempt % 5 == 0:
                         if self.run_convergence_check():
+                            self._freeze_snapshot()
                             break
 
             else:
@@ -319,6 +374,9 @@ class Trainer:
                     trail = [(r, c)]
                     steps = 0
                     step_dt = 1.0 / PHASE1_STEPS_PER_SEC
+                    ep_return = 0.0
+                    ep_wall_bumps = 0
+                    eps = self.compute_epsilon()
 
                     max_visible_steps = 20
 
@@ -329,6 +387,10 @@ class Trainer:
                         next_s, reward, done = self.env.step(s, a)
                         steps += 1
                         self.total_transitions += 1
+                        ep_return += reward
+                        if next_s == s and not done:
+                            ep_wall_bumps += 1
+                        self.visit_counts[s] += 1
 
                         self.agent.update(s, a, reward, next_s, done)
                         nr, nc = decode(next_s)
@@ -346,7 +408,9 @@ class Trainer:
 
                         await asyncio.sleep(step_dt)
 
+                    reached_goal = (s == self.env.goal_state)
                     self.steps_history.append(steps)
+                    self._log_episode(steps, reached_goal, ep_return, ep_wall_bumps, eps)
 
                 # -----------------------------------------------------------
                 # Phase 2: Turbo Learning (25 Hz Frames)
@@ -376,12 +440,18 @@ class Trainer:
                         s = self.env.reset()
                         trail_attempt = [decode(s)]
                         steps = 0
+                        ep_return = 0.0
+                        ep_wall_bumps = 0
 
                         for _ in range(MAX_ATTEMPT_STEPS):
                             a = self.agent.select_action(s, eps)
                             next_s, reward, done = self.env.step(s, a)
                             steps += 1
                             self.total_transitions += 1
+                            ep_return += reward
+                            if next_s == s and not done:
+                                ep_wall_bumps += 1
+                            self.visit_counts[s] += 1
                             self.agent.update(s, a, reward, next_s, done)
                             trail_attempt.append(decode(next_s))
                             s = next_s
@@ -391,13 +461,16 @@ class Trainer:
                                         self.best_steps = steps
                                 break
 
+                        reached_goal = (s == self.env.goal_state)
                         self.steps_history.append(steps)
+                        self._log_episode(steps, reached_goal, ep_return, ep_wall_bumps, eps)
                         latest_trail = trail_attempt
                         last_r, last_c = trail_attempt[-1]
 
                         # Convergence check every 25 attempts
                         if self.attempt % CONVERGENCE_CHECK_INTERVAL == 0:
                             if self.run_convergence_check():
+                                self._freeze_snapshot()
                                 break
 
                     # Broadcast 25 Hz frame
