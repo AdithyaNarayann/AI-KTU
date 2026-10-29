@@ -54,6 +54,8 @@ export interface MazeProps {
   showArrows?: boolean;
   className?: string;
   hasShadow?: boolean;
+  hoveredCell?: [number, number] | null;
+  onHoverCell?: (cell: [number, number] | null) => void;
 }
 
 export const Maze: FC<MazeProps> = ({
@@ -65,6 +67,8 @@ export const Maze: FC<MazeProps> = ({
   showArrows = false,
   className = '',
   hasShadow = true,
+  hoveredCell,
+  onHoverCell,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const solvedTimeRef = useRef<number | null>(null);
@@ -289,6 +293,18 @@ export const Maze: FC<MazeProps> = ({
         }
       }
 
+      // 7. Interactive Hovered Cell Highlight
+      if (hoveredCell) {
+        const [hr, hc] = hoveredCell;
+        if (hr >= 0 && hr < 11 && hc >= 0 && hc < 11) {
+          ctx.strokeStyle = '#FF4F00';
+          ctx.lineWidth = 2.5;
+          ctx.strokeRect(hc * tileSize + 1, hr * tileSize + 1, tileSize - 2, tileSize - 2);
+          ctx.fillStyle = 'rgba(255, 79, 0, 0.22)';
+          ctx.fillRect(hc * tileSize + 1, hr * tileSize + 1, tileSize - 2, tileSize - 2);
+        }
+      }
+
       ctx.restore();
     };
 
@@ -297,7 +313,19 @@ export const Maze: FC<MazeProps> = ({
     return () => {
       if (animId) cancelAnimationFrame(animId);
     };
-  }, [frame, grid, optimalPath, layer, valuesGrid, policyGrid, showArrows]);
+  }, [frame, grid, optimalPath, layer, valuesGrid, policyGrid, showArrows, hoveredCell]);
+
+  const handlePointer = (clientX: number, clientY: number) => {
+    if (!onHoverCell || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const c = Math.floor(((clientX - rect.left) / rect.width) * 11);
+    const r = Math.floor(((clientY - rect.top) / rect.height) * 11);
+    if (r >= 0 && r < 11 && c >= 0 && c < 11) {
+      onHoverCell([r, c]);
+    } else {
+      onHoverCell(null);
+    }
+  };
 
   return (
     <div
@@ -307,8 +335,17 @@ export const Maze: FC<MazeProps> = ({
     >
       <canvas
         ref={canvasRef}
-        className="w-full h-full block"
+        className={`w-full h-full block ${onHoverCell ? 'cursor-crosshair' : ''}`}
         style={{ imageRendering: 'pixelated' }}
+        onMouseMove={(e) => handlePointer(e.clientX, e.clientY)}
+        onMouseLeave={() => onHoverCell?.(null)}
+        onTouchStart={(e) => {
+          if (e.touches[0]) handlePointer(e.touches[0].clientX, e.touches[0].clientY);
+        }}
+        onTouchMove={(e) => {
+          if (e.touches[0]) handlePointer(e.touches[0].clientX, e.touches[0].clientY);
+        }}
+        onTouchEnd={() => onHoverCell?.(null)}
       />
     </div>
   );

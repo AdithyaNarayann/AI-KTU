@@ -51,6 +51,8 @@ export const App: FC = () => {
 
   const [selectedSpeed, setSelectedSpeed] = useState<number | string>(40);
   const [isReportOpen, setIsReportOpen] = useState<boolean>(false);
+  const [shuffleSpin, setShuffleSpin] = useState<boolean>(false);
+  const [hoveredCell, setHoveredCell] = useState<[number, number] | null>(null);
 
   const isRunning = frame.stage === 'exploring' || frame.stage === 'learning' || frame.stage === 'converging';
   const isSolved = frame.stage === 'solved';
@@ -114,7 +116,11 @@ export const App: FC = () => {
 
   const handleShuffle = () => {
     if (isRunning) return;
-    const next = (currentMazeIdx + 1) % 3;
+    setShuffleSpin(true);
+    setTimeout(() => setShuffleSpin(false), 350);
+    // True random selection from other available mazes
+    const options = [0, 1, 2].filter((idx) => idx !== currentMazeIdx);
+    const next = options[Math.floor(Math.random() * options.length)];
     setMaze(next);
   };
 
@@ -127,7 +133,7 @@ export const App: FC = () => {
         </h1>
         <div className="flex items-center gap-2">
           <span
-            className={`font-mono text-[11px] px-2.5 py-0.5 uppercase tracking-wider font-bold border ${
+            className={`font-mono text-[11px] px-2.5 py-0.5 uppercase tracking-wider font-bold border transition-colors duration-200 ${
               isSolved
                 ? 'bg-[#111111] text-white border-[#111111]'
                 : isRunning
@@ -144,14 +150,29 @@ export const App: FC = () => {
       <main className="w-full max-w-5xl mx-auto flex-1 min-h-0 flex flex-col lg:flex-row items-center justify-center gap-4 sm:gap-6 lg:gap-10 py-2 sm:py-3 lg:py-1">
         {/* Left Column: Maze Canvas & Immediate Status */}
         <div className="w-full max-w-[340px] xs:max-w-[360px] sm:max-w-[400px] lg:max-w-[440px] flex flex-col gap-1.5 sm:gap-2 shrink-0">
-          <Maze frame={frame} hasShadow={true} />
+          <Maze frame={frame} hasShadow={true} hoveredCell={hoveredCell} onHoverCell={setHoveredCell} />
 
-          {/* Under maze: ONE line, never truncated, wrapping to 2 lines max */}
+          {/* Under maze: Live inspector on hover / normal status sentence */}
           <div
-            className="min-h-[1.75rem] sm:min-h-[2.25rem] flex items-center px-1 font-mono text-[11px] sm:text-xs font-semibold text-[#111111] leading-snug"
+            className="min-h-[1.75rem] sm:min-h-[2.25rem] flex items-center px-1 font-mono text-[11px] sm:text-xs font-semibold text-[#111111] leading-snug transition-all"
             aria-live="polite"
           >
-            {statusSentence}
+            {hoveredCell ? (
+              <span className="text-[#FF4F00] flex items-center gap-1.5 truncate">
+                <span className="font-bold underline decoration-[#FF4F00]">Cell ({hoveredCell[0]}, {hoveredCell[1]})</span>
+                <span className="text-[#111111]/80">
+                  {frame.grid?.[hoveredCell[0]]?.[hoveredCell[1]] === '#'
+                    ? 'Wall #'
+                    : frame.grid?.[hoveredCell[0]]?.[hoveredCell[1]] === 'S'
+                    ? 'Start S'
+                    : frame.grid?.[hoveredCell[0]]?.[hoveredCell[1]] === 'G'
+                    ? 'Goal G'
+                    : `Floor · V(s): ${(frame.value?.[hoveredCell[0]]?.[hoveredCell[1]] ?? 0).toFixed(3)}`}
+                </span>
+              </span>
+            ) : (
+              <span>{statusSentence}</span>
+            )}
           </div>
         </div>
 
@@ -169,10 +190,10 @@ export const App: FC = () => {
                   type="button"
                   disabled={isRunning}
                   onClick={() => setMaze(idx)}
-                  className={`py-2 lg:py-1.5 px-1 text-center font-mono text-xs font-bold border transition-colors ${
+                  className={`py-2 lg:py-1.5 px-1 text-center font-mono text-xs font-bold border transition-all duration-150 active:scale-95 ${
                     currentMazeIdx === idx
-                      ? 'bg-[#111111] text-white border-[#111111]'
-                      : 'bg-white/50 text-[#111111] border-[#D9D4C7] hover:bg-white'
+                      ? 'bg-[#111111] text-white border-[#111111] shadow-sm'
+                      : 'bg-white/50 text-[#111111] border-[#D9D4C7] hover:bg-white hover:border-[#111111]'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   {idx + 1}
@@ -182,9 +203,13 @@ export const App: FC = () => {
                 type="button"
                 disabled={isRunning}
                 onClick={handleShuffle}
-                className="py-2 lg:py-1.5 px-1 text-center font-mono text-xs font-bold bg-white/50 text-[#111111] border border-[#D9D4C7] hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Pick a random maze"
+                className="py-2 lg:py-1.5 px-1 text-center font-mono text-xs font-bold bg-white/50 text-[#111111] border border-[#D9D4C7] hover:bg-white hover:border-[#111111] transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1 group"
               >
-                Shuffle
+                <span className={`inline-block transition-transform duration-300 ${shuffleSpin ? 'rotate-180 scale-125' : 'group-hover:rotate-45'}`}>
+                  ⇄
+                </span>
+                <span>Shuffle</span>
               </button>
             </div>
           </div>
@@ -201,10 +226,10 @@ export const App: FC = () => {
                   type="button"
                   disabled={isRunning}
                   onClick={() => handleSpeedSelect(sp.value)}
-                  className={`py-2 lg:py-1.5 px-1 text-center font-mono text-[11px] sm:text-xs font-bold border transition-colors ${
+                  className={`py-2 lg:py-1.5 px-1 text-center font-mono text-[11px] sm:text-xs font-bold border transition-all duration-150 active:scale-95 ${
                     selectedSpeed === sp.value
-                      ? 'bg-[#111111] text-white border-[#111111]'
-                      : 'bg-white/50 text-[#111111] border-[#D9D4C7] hover:bg-white'
+                      ? 'bg-[#111111] text-white border-[#111111] shadow-sm'
+                      : 'bg-white/50 text-[#111111] border-[#D9D4C7] hover:bg-white hover:border-[#111111]'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   {sp.label}
@@ -213,28 +238,28 @@ export const App: FC = () => {
             </div>
           </div>
 
-          {/* Four Numbers with 1 or 2 Word Labels */}
-          <div className="grid grid-cols-2 gap-2 border border-[#D9D4C7] bg-white/40 p-2 sm:p-2.5">
-            <div className="flex flex-col">
-              <span className="font-mono text-[11px] text-[#111111]/70">Shortest</span>
+          {/* Four Numbers with 1 or 2 Word Labels + Informative Tooltips */}
+          <div className="grid grid-cols-2 gap-2 border border-[#D9D4C7] bg-white/40 p-2 sm:p-2.5 transition-colors hover:bg-white/60">
+            <div className="flex flex-col group cursor-default" title="Shortest path to goal via exact BFS">
+              <span className="font-mono text-[11px] text-[#111111]/70 group-hover:text-[#FF4F00] transition-colors">Shortest</span>
               <span className="font-mono text-sm font-bold text-[#111111] tabular-nums">
                 {frame.optimal_steps ?? 32}
               </span>
             </div>
-            <div className="flex flex-col">
-              <span className="font-mono text-[11px] text-[#111111]/70">Best</span>
+            <div className="flex flex-col group cursor-default" title="Shortest episode route achieved so far">
+              <span className="font-mono text-[11px] text-[#111111]/70 group-hover:text-[#FF4F00] transition-colors">Best</span>
               <span className="font-mono text-sm font-bold text-[#111111] tabular-nums">
                 {bestStepsDisplay}
               </span>
             </div>
-            <div className="flex flex-col border-t border-[#D9D4C7] pt-1 sm:pt-1.5">
-              <span className="font-mono text-[11px] text-[#111111]/70">Moves</span>
+            <div className="flex flex-col border-t border-[#D9D4C7] pt-1 sm:pt-1.5 group cursor-default" title="Total environment actions taken across all episodes">
+              <span className="font-mono text-[11px] text-[#111111]/70 group-hover:text-[#FF4F00] transition-colors">Moves</span>
               <span className="font-mono text-sm font-bold text-[#111111] tabular-nums">
                 {(frame.total_transitions ?? 0).toLocaleString()}
               </span>
             </div>
-            <div className="flex flex-col border-t border-[#D9D4C7] pt-1 sm:pt-1.5">
-              <span className="font-mono text-[11px] text-[#111111]/70">Random</span>
+            <div className="flex flex-col border-t border-[#D9D4C7] pt-1 sm:pt-1.5 group cursor-default" title="Current exploration rate (epsilon percentage)">
+              <span className="font-mono text-[11px] text-[#111111]/70 group-hover:text-[#FF4F00] transition-colors">Random</span>
               <span className="font-mono text-sm font-bold text-[#111111] tabular-nums">
                 {frame.random_pct}%
               </span>
@@ -252,7 +277,7 @@ export const App: FC = () => {
                 boxShadow: isRunning ? '2px 2px 0px #111111' : '4px 4px 0px #111111',
                 transform: isRunning ? 'translate(2px, 2px)' : 'none',
               }}
-              className="w-full h-[46px] relative overflow-hidden bg-[#111111] text-white font-mono font-bold text-sm tracking-wider uppercase transition-transform active:translate-x-1 active:translate-y-1 active:shadow-none disabled:cursor-not-allowed border-2 border-[#111111]"
+              className="w-full h-[46px] relative overflow-hidden bg-[#111111] hover:bg-[#222222] text-white font-mono font-bold text-sm tracking-wider uppercase transition-all duration-150 active:translate-x-1 active:translate-y-1 active:shadow-none disabled:cursor-not-allowed border-2 border-[#111111]"
             >
               {isRunning && (
                 <div
@@ -287,14 +312,14 @@ export const App: FC = () => {
                 style={{
                   boxShadow: '4px 4px 0px #111111',
                 }}
-                className="h-[46px] bg-[#F5F2EA] hover:bg-white text-[#111111] font-mono font-bold text-xs uppercase border-2 border-[#111111] flex items-center justify-center transition-transform active:translate-x-1 active:translate-y-1 active:shadow-none"
+                className="h-[46px] bg-[#F5F2EA] hover:bg-[#FF4F00] hover:text-white text-[#111111] font-mono font-bold text-xs uppercase border-2 border-[#111111] flex items-center justify-center transition-all duration-150 active:translate-x-1 active:translate-y-1 active:shadow-none"
               >
                 Report
               </button>
             )}
           </div>
 
-          {/* Sparkline */}
+          {/* Sparkline with Interactive Scrubbing */}
           <Sparkline data={frame.steps_history} optimal={frame.optimal_steps ?? 32} />
         </div>
       </main>
