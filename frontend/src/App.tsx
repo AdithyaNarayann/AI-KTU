@@ -119,7 +119,7 @@ export const App: FC = () => {
   };
 
   return (
-    <div className="h-screen max-h-screen overflow-hidden bg-[#F5F2EA] text-[#111111] flex flex-col justify-between p-3 sm:p-5 lg:p-6 font-sans select-none selection:bg-[#FF4F00] selection:text-white">
+    <div className="min-h-screen lg:h-screen lg:max-h-screen overflow-x-hidden overflow-y-auto lg:overflow-hidden bg-[#F5F2EA] text-[#111111] flex flex-col justify-between p-3 sm:p-5 lg:p-6 font-sans select-none selection:bg-[#FF4F00] selection:text-white pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {/* 1. Header: Wordmark on left, Status badge on right */}
       <header className="w-full max-w-5xl mx-auto flex items-baseline justify-between border-b border-[#D9D4C7] pb-2.5 shrink-0">
         <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[#111111]">
@@ -141,14 +141,14 @@ export const App: FC = () => {
       </header>
 
       {/* 2. Main Content Area (Vertically Centered, No Dead Band) */}
-      <main className="w-full max-w-5xl mx-auto flex-1 min-h-0 flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-10 py-1">
+      <main className="w-full max-w-5xl mx-auto flex-1 min-h-0 flex flex-col lg:flex-row items-center justify-center gap-4 sm:gap-6 lg:gap-10 py-2 sm:py-3 lg:py-1">
         {/* Left Column: Maze Canvas & Immediate Status */}
-        <div className="w-full max-w-[360px] sm:max-w-[400px] lg:max-w-[440px] flex flex-col gap-2 shrink-0">
+        <div className="w-full max-w-[340px] xs:max-w-[360px] sm:max-w-[400px] lg:max-w-[440px] flex flex-col gap-1.5 sm:gap-2 shrink-0">
           <Maze frame={frame} hasShadow={true} />
 
           {/* Under maze: ONE line, never truncated, wrapping to 2 lines max */}
           <div
-            className="min-h-[2.25rem] flex items-center px-1 font-mono text-xs font-semibold text-[#111111] leading-snug"
+            className="min-h-[1.75rem] sm:min-h-[2.25rem] flex items-center px-1 font-mono text-[11px] sm:text-xs font-semibold text-[#111111] leading-snug"
             aria-live="polite"
           >
             {statusSentence}
@@ -156,7 +156,7 @@ export const App: FC = () => {
         </div>
 
         {/* Right Panel: Selectors, Numbers, RUN, Sparkline */}
-        <div className="w-full max-w-[360px] sm:max-w-[400px] flex flex-col gap-3 justify-center">
+        <div className="w-full max-w-[340px] xs:max-w-[360px] sm:max-w-[400px] flex flex-col gap-2.5 sm:gap-3 justify-center">
           {/* Maze Selector */}
           <div className="flex flex-col gap-1">
             <span className="font-mono text-[11px] font-semibold text-[#111111]/70">
@@ -169,7 +169,7 @@ export const App: FC = () => {
                   type="button"
                   disabled={isRunning}
                   onClick={() => setMaze(idx)}
-                  className={`py-1.5 px-1 text-center font-mono text-xs font-bold border transition-colors ${
+                  className={`py-2 lg:py-1.5 px-1 text-center font-mono text-xs font-bold border transition-colors ${
                     currentMazeIdx === idx
                       ? 'bg-[#111111] text-white border-[#111111]'
                       : 'bg-white/50 text-[#111111] border-[#D9D4C7] hover:bg-white'
@@ -182,7 +182,7 @@ export const App: FC = () => {
                 type="button"
                 disabled={isRunning}
                 onClick={handleShuffle}
-                className="py-1.5 px-1 text-center font-mono text-xs font-bold bg-white/50 text-[#111111] border border-[#D9D4C7] hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                className="py-2 lg:py-1.5 px-1 text-center font-mono text-xs font-bold bg-white/50 text-[#111111] border border-[#D9D4C7] hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Shuffle
               </button>
@@ -201,7 +201,7 @@ export const App: FC = () => {
                   type="button"
                   disabled={isRunning}
                   onClick={() => handleSpeedSelect(sp.value)}
-                  className={`py-1.5 px-1 text-center font-mono text-xs font-bold border transition-colors ${
+                  className={`py-2 lg:py-1.5 px-1 text-center font-mono text-[11px] sm:text-xs font-bold border transition-colors ${
                     selectedSpeed === sp.value
                       ? 'bg-[#111111] text-white border-[#111111]'
                       : 'bg-white/50 text-[#111111] border-[#D9D4C7] hover:bg-white'
@@ -214,7 +214,7 @@ export const App: FC = () => {
           </div>
 
           {/* Four Numbers with 1 or 2 Word Labels */}
-          <div className="grid grid-cols-2 gap-2 border border-[#D9D4C7] bg-white/40 p-2.5">
+          <div className="grid grid-cols-2 gap-2 border border-[#D9D4C7] bg-white/40 p-2 sm:p-2.5">
             <div className="flex flex-col">
               <span className="font-mono text-[11px] text-[#111111]/70">Shortest</span>
               <span className="font-mono text-sm font-bold text-[#111111] tabular-nums">
@@ -227,13 +227,13 @@ export const App: FC = () => {
                 {bestStepsDisplay}
               </span>
             </div>
-            <div className="flex flex-col border-t border-[#D9D4C7] pt-1.5">
+            <div className="flex flex-col border-t border-[#D9D4C7] pt-1 sm:pt-1.5">
               <span className="font-mono text-[11px] text-[#111111]/70">Moves</span>
               <span className="font-mono text-sm font-bold text-[#111111] tabular-nums">
                 {(frame.total_transitions ?? 0).toLocaleString()}
               </span>
             </div>
-            <div className="flex flex-col border-t border-[#D9D4C7] pt-1.5">
+            <div className="flex flex-col border-t border-[#D9D4C7] pt-1 sm:pt-1.5">
               <span className="font-mono text-[11px] text-[#111111]/70">Random</span>
               <span className="font-mono text-sm font-bold text-[#111111] tabular-nums">
                 {frame.random_pct}%

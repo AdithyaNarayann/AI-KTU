@@ -76,24 +76,24 @@ export const ReportModal: FC<ReportModalProps> = ({
   const firstGoalEp = efficiency.first_goal_episode ?? 1;
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#F5F2EA] text-[#111111] h-screen max-h-screen overflow-hidden flex flex-col p-3 sm:p-5 lg:p-6 font-sans select-none report-fade-enter report-fade-enter-active">
+    <div className="fixed inset-0 z-50 bg-[#F5F2EA] text-[#111111] overflow-y-auto lg:overflow-hidden lg:h-screen lg:max-h-screen flex flex-col p-3 sm:p-5 lg:p-6 font-sans select-none report-fade-enter report-fade-enter-active overscroll-contain">
       {/* 1. Header Strip - Blended seamlessly with Main App styling */}
-      <header className="flex items-center justify-between border-b border-[#D9D4C7] pb-3 shrink-0">
-        <div className="flex items-center gap-3 sm:gap-4 overflow-hidden">
-          <div className="flex items-baseline gap-2 shrink-0">
-            <span className="font-bold text-lg sm:text-xl tracking-tight text-[#111111]">
+      <header className="flex items-center justify-between border-b border-[#D9D4C7] pb-2 sm:pb-3 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-4 overflow-hidden">
+          <div className="flex items-baseline gap-1.5 sm:gap-2 shrink-0">
+            <span className="font-bold text-base sm:text-xl tracking-tight text-[#111111]">
               REPORT
             </span>
-            <span className="font-mono text-xs text-[#111111]/70 border border-[#D9D4C7] px-2 py-0.5 bg-white/40">
+            <span className="font-mono text-[11px] sm:text-xs text-[#111111]/70 border border-[#D9D4C7] px-1.5 sm:px-2 py-0.5 bg-white/40">
               {activeMazeName} ({meta.optimal_len})
             </span>
-            <span className="font-mono text-[10px] text-[#111111]/70 border border-[#D9D4C7] px-1.5 py-0.5 bg-white/40 uppercase">
+            <span className="hidden sm:inline-block font-mono text-[10px] text-[#111111]/70 border border-[#D9D4C7] px-1.5 py-0.5 bg-white/40 uppercase">
               {meta.speed_mode === 'step' ? 'Step-by-step' : meta.speed_mode}
             </span>
           </div>
 
           {/* Verdict Badge */}
-          <span className="bg-[#111111] text-white px-2.5 py-0.5 font-mono text-[11px] font-bold tracking-wider shrink-0">
+          <span className="bg-[#111111] text-white px-2 sm:px-2.5 py-0.5 font-mono text-[10px] sm:text-[11px] font-bold tracking-wider shrink-0">
             {verdictWord}
           </span>
 
@@ -119,18 +119,18 @@ export const ReportModal: FC<ReportModalProps> = ({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <button
             type="button"
             onClick={() => window.print()}
-            className="border border-[#111111] bg-white/40 hover:bg-[#111111] hover:text-white px-3 py-1 font-mono text-xs font-bold uppercase transition-colors"
+            className="border border-[#111111] bg-white/40 hover:bg-[#111111] hover:text-white px-2.5 sm:px-3 py-1 font-mono text-xs font-bold uppercase transition-colors"
           >
             Print
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="border border-[#111111] bg-white/40 hover:bg-[#111111] hover:text-white w-7 h-7 flex items-center justify-center font-bold text-xs transition-colors"
+            className="border border-[#111111] bg-white/40 hover:bg-[#111111] hover:text-white w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center font-bold text-sm sm:text-xs transition-colors"
             aria-label="Close"
           >
             ✕
@@ -138,14 +138,34 @@ export const ReportModal: FC<ReportModalProps> = ({
         </div>
       </header>
 
-      {/* 2. Main Visual Grid: 2 Rows, exactly fitting viewport */}
-      <div className="grid grid-rows-[3fr_2fr] grid-cols-12 gap-3 flex-1 min-h-0 pt-3">
+      {/* Mobile Top Metric Strip (visible only on <md) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 md:hidden gap-1.5 pt-2 font-mono text-xs shrink-0">
+        <div className="border border-[#D9D4C7] bg-white/40 px-2 py-1 flex items-baseline justify-between">
+          <span className="text-[10px] text-[#111111]/60 uppercase tracking-wider">Gap</span>
+          <span className="font-bold tabular-nums text-[#111111]">{verdict.gap_pct}%</span>
+        </div>
+        <div className="border border-[#D9D4C7] bg-white/40 px-2 py-1 flex items-baseline justify-between">
+          <span className="text-[10px] text-[#111111]/60 uppercase tracking-wider">Success</span>
+          <span className="font-bold tabular-nums text-[#111111]">{verdict.rollouts_success}/100</span>
+        </div>
+        <div className="border border-[#D9D4C7] bg-white/40 px-2 py-1 flex items-baseline justify-between">
+          <span className="text-[10px] text-[#111111]/60 uppercase tracking-wider">Converged</span>
+          <span className="font-bold tabular-nums text-[#111111]">Ep {convergedAttempt}</span>
+        </div>
+        <div className="border border-[#D9D4C7] bg-white/40 px-2 py-1 flex items-baseline justify-between">
+          <span className="text-[10px] text-[#111111]/60 uppercase tracking-wider">Moves</span>
+          <span className="font-bold tabular-nums text-[#111111]">{efficiency.transitions_total.toLocaleString()}</span>
+        </div>
+      </div>
+
+      {/* 2. Main Visual Grid: 2 Rows on desktop, vertically stacked on mobile */}
+      <div className="flex flex-col lg:grid lg:grid-rows-[3fr_2fr] lg:grid-cols-12 gap-3 flex-1 min-h-0 pt-3 pb-8 lg:pb-0">
         {/* ROW 1, COL 1..5: Interactive Learning Curve */}
-        <div className="col-span-12 lg:col-span-5 border border-[#111111] bg-white/40 p-3 flex flex-col min-h-0 overflow-hidden">
+        <div className="w-full lg:col-span-5 border border-[#111111] bg-white/40 p-3 flex flex-col shrink-0 lg:shrink min-h-[220px] lg:min-h-0 overflow-hidden">
           <div className="flex justify-between items-baseline mb-1.5 shrink-0">
-            <div>
+            <div className="flex items-baseline gap-2">
               <span className="font-bold text-xs tracking-tight text-[#111111]">Learning curve</span>
-              <span className="ml-2 font-mono text-[10px] text-[#111111]/60">hover to inspect</span>
+              <span className="hidden sm:inline font-mono text-[10px] text-[#111111]/60">drag to inspect</span>
             </div>
             <div className="flex items-center gap-1.5 font-mono text-[10px]">
               <span className="border border-[#D9D4C7] px-1.5 py-0.2 bg-[#F5F2EA] text-[#111111]/80">
@@ -156,7 +176,7 @@ export const ReportModal: FC<ReportModalProps> = ({
               </span>
             </div>
           </div>
-          <div className="flex-1 min-h-0 w-full relative">
+          <div className="h-[150px] sm:h-[170px] lg:h-auto lg:flex-1 w-full relative min-h-0">
             <InteractiveLearningCurve
               curves={curves}
               optimalLen={meta.optimal_len}
@@ -166,16 +186,16 @@ export const ReportModal: FC<ReportModalProps> = ({
         </div>
 
         {/* ROW 1, COL 6..12: Hero Architectural Triptych */}
-        <div className="col-span-12 lg:col-span-7 border border-[#111111] bg-white/40 p-3 flex flex-col min-h-0 overflow-hidden">
-          <div className="flex justify-between items-baseline mb-1.5 shrink-0">
-            <div>
+        <div className="w-full lg:col-span-7 border border-[#111111] bg-white/40 p-2.5 sm:p-3 flex flex-col shrink-0 lg:shrink overflow-hidden">
+          <div className="flex justify-between items-center mb-1.5 shrink-0">
+            <div className="flex items-baseline gap-1.5">
               <span className="font-bold text-xs tracking-tight text-[#111111]">What it learned</span>
-              <span className="ml-2 font-mono text-[10px] text-[#111111]/60">value function & policy</span>
+              <span className="hidden sm:inline font-mono text-[10px] text-[#111111]/60">value function & policy</span>
             </div>
             <button
               type="button"
               onClick={() => setShowPolicyArrows((prev) => !prev)}
-              className={`border border-[#111111] px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase transition-colors ${
+              className={`border border-[#111111] px-2 sm:px-2.5 py-0.5 font-mono text-[9px] sm:text-[10px] font-bold uppercase transition-colors shrink-0 ${
                 showPolicyArrows ? 'bg-[#FF4F00] text-white border-[#FF4F00]' : 'bg-[#F5F2EA] text-[#111111] hover:bg-[#111111] hover:text-white'
               }`}
             >
@@ -183,14 +203,14 @@ export const ReportModal: FC<ReportModalProps> = ({
             </button>
           </div>
 
-          <div className="grid grid-cols-3 gap-2.5 flex-1 min-h-0 items-center">
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5 items-stretch lg:flex-1 lg:min-h-0">
             {/* Panel 1: Learned */}
-            <div className="flex flex-col items-center gap-1 h-full min-h-0 justify-between border border-[#D9D4C7] bg-[#F5F2EA] p-2">
-              <div className="w-full flex justify-between items-center text-[10px] font-mono px-0.5 shrink-0">
+            <div className="flex flex-col items-center justify-between border border-[#D9D4C7] bg-[#F5F2EA] p-1.5 sm:p-2 h-auto lg:h-full">
+              <div className="w-full flex justify-between items-center text-[9px] sm:text-[10px] font-mono px-0.5 shrink-0">
                 <span className="font-bold text-[#111111]">Learned V</span>
-                <span className="text-[#111111]/60">Agent Q</span>
+                <span className="text-[#111111]/60 hidden xs:inline ml-1">Agent</span>
               </div>
-              <div className="w-full flex-1 min-h-0 flex items-center justify-center p-1">
+              <div className="w-full aspect-square my-1 sm:my-1.5 flex items-center justify-center lg:flex-1 lg:min-h-0 lg:h-full lg:w-auto">
                 <Maze
                   grid={meta.grid}
                   layer="beliefs"
@@ -198,21 +218,21 @@ export const ReportModal: FC<ReportModalProps> = ({
                   policyGrid={knowledge.policy_learned}
                   showArrows={showPolicyArrows}
                   hasShadow={false}
-                  className="max-h-full max-w-full h-full w-auto aspect-square"
+                  className="w-full h-auto aspect-square lg:w-auto lg:h-full max-h-full max-w-full"
                 />
               </div>
-              <div className="w-full border-t border-[#D9D4C7] pt-1 text-center font-mono text-[10px] text-[#111111]/80 shrink-0">
-                Path Acc: <strong className="font-bold text-[#111111]">{(policy_accuracy.on_path * 100).toFixed(0)}%</strong>
+              <div className="w-full border-t border-[#D9D4C7] pt-1 text-center font-mono text-[9px] sm:text-[10px] text-[#111111]/80 shrink-0">
+                Path: <strong className="font-bold text-[#111111]">{(policy_accuracy.on_path * 100).toFixed(0)}%</strong>
               </div>
             </div>
 
             {/* Panel 2: Truth */}
-            <div className="flex flex-col items-center gap-1 h-full min-h-0 justify-between border border-[#D9D4C7] bg-[#F5F2EA] p-2">
-              <div className="w-full flex justify-between items-center text-[10px] font-mono px-0.5 shrink-0">
+            <div className="flex flex-col items-center justify-between border border-[#D9D4C7] bg-[#F5F2EA] p-1.5 sm:p-2 h-auto lg:h-full">
+              <div className="w-full flex justify-between items-center text-[9px] sm:text-[10px] font-mono px-0.5 shrink-0">
                 <span className="font-bold text-[#111111]">Truth V*</span>
-                <span className="text-[#111111]/60">Exact BFS</span>
+                <span className="text-[#111111]/60 hidden xs:inline ml-1">Exact</span>
               </div>
-              <div className="w-full flex-1 min-h-0 flex items-center justify-center p-1">
+              <div className="w-full aspect-square my-1 sm:my-1.5 flex items-center justify-center lg:flex-1 lg:min-h-0 lg:h-full lg:w-auto">
                 <Maze
                   grid={meta.grid}
                   layer="ground_truth"
@@ -220,49 +240,49 @@ export const ReportModal: FC<ReportModalProps> = ({
                   policyGrid={optimalArrowsGrid}
                   showArrows={showPolicyArrows}
                   hasShadow={false}
-                  className="max-h-full max-w-full h-full w-auto aspect-square"
+                  className="w-full h-auto aspect-square lg:w-auto lg:h-full max-h-full max-w-full"
                 />
               </div>
-              <div className="w-full border-t border-[#D9D4C7] pt-1 text-center font-mono text-[10px] text-[#111111]/80 shrink-0">
-                Optimal: <strong className="font-bold text-[#111111]">{meta.optimal_len} steps</strong>
+              <div className="w-full border-t border-[#D9D4C7] pt-1 text-center font-mono text-[9px] sm:text-[10px] text-[#111111]/80 shrink-0">
+                Opt: <strong className="font-bold text-[#111111]">{meta.optimal_len} steps</strong>
               </div>
             </div>
 
             {/* Panel 3: Gap */}
-            <div className="flex flex-col items-center gap-1 h-full min-h-0 justify-between border border-[#D9D4C7] bg-[#F5F2EA] p-2">
-              <div className="w-full flex justify-between items-center text-[10px] font-mono px-0.5 shrink-0">
-                <span className="font-bold text-[#111111]">Gap |V - V*|</span>
-                <span className="text-[#111111]/60">Residual</span>
+            <div className="flex flex-col items-center justify-between border border-[#D9D4C7] bg-[#F5F2EA] p-1.5 sm:p-2 h-auto lg:h-full">
+              <div className="w-full flex justify-between items-center text-[9px] sm:text-[10px] font-mono px-0.5 shrink-0">
+                <span className="font-bold text-[#111111] whitespace-nowrap">Gap |V-V*|</span>
+                <span className="text-[#111111]/60 hidden xs:inline ml-1">Diff</span>
               </div>
-              <div className="w-full flex-1 min-h-0 flex items-center justify-center p-1">
+              <div className="w-full aspect-square my-1 sm:my-1.5 flex items-center justify-center lg:flex-1 lg:min-h-0 lg:h-full lg:w-auto">
                 <Maze
                   grid={meta.grid}
                   layer="error"
                   valuesGrid={knowledge.v_error_abs}
                   hasShadow={false}
-                  className="max-h-full max-w-full h-full w-auto aspect-square"
+                  className="w-full h-auto aspect-square lg:w-auto lg:h-full max-h-full max-w-full"
                 />
               </div>
-              <div className="w-full border-t border-[#D9D4C7] pt-1 text-center font-mono text-[10px] text-[#111111]/80 shrink-0">
-                Path Error: <strong className="font-bold text-[#111111]">{value_error.rmse_on_path.toFixed(3)}</strong>
+              <div className="w-full border-t border-[#D9D4C7] pt-1 text-center font-mono text-[9px] sm:text-[10px] text-[#111111]/80 shrink-0">
+                Err: <strong className="font-bold text-[#111111]">{value_error.rmse_on_path.toFixed(3)}</strong>
               </div>
             </div>
           </div>
         </div>
 
         {/* ROW 2, COL 1..4: Interactive Reliability Benchmark */}
-        <div className="col-span-12 sm:col-span-4 border border-[#111111] bg-white/40 p-3 flex flex-col justify-between min-h-0 overflow-hidden">
+        <div className="w-full lg:col-span-4 border border-[#111111] bg-white/40 p-3 flex flex-col justify-between shrink-0 lg:shrink min-h-[175px] lg:min-h-0 overflow-hidden">
           <div className="flex justify-between items-baseline mb-1 shrink-0">
-            <div>
+            <div className="flex items-baseline gap-1.5">
               <span className="font-bold text-xs tracking-tight text-[#111111]">Reliability</span>
-              <span className="ml-1.5 font-mono text-[10px] text-[#111111]/60">20 seed benchmark</span>
+              <span className="hidden xs:inline font-mono text-[10px] text-[#111111]/60">20 seed benchmark</span>
             </div>
             <span className="font-mono text-[10px] font-bold border border-[#111111] px-1.5 py-0.2 bg-[#F5F2EA]">
               {benchmarkDots.length}/20 solved
             </span>
           </div>
 
-          <div className="flex-1 min-h-0 w-full relative flex items-center py-1">
+          <div className="h-[95px] lg:h-auto lg:flex-1 min-h-0 w-full relative flex items-center py-1">
             <InteractiveReliabilityChart
               dots={benchmarkDots}
               summary={currentMazeBenchmark?.episodes ?? null}
@@ -287,8 +307,9 @@ export const ReportModal: FC<ReportModalProps> = ({
                     key={i}
                     onMouseEnter={() => setActiveSeedHover(i)}
                     onMouseLeave={() => setActiveSeedHover(null)}
+                    onClick={() => setActiveSeedHover(activeSeedHover === i ? null : i)}
                     title={`Seed ${i}: ${dot?.converged_episode ? `Ep ${dot.converged_episode}` : 'Solved'}`}
-                    className={`h-2.5 border transition-colors cursor-pointer ${
+                    className={`h-3 sm:h-2.5 border transition-colors cursor-pointer ${
                       isHovered
                         ? 'bg-[#FF4F00] border-[#FF4F00]'
                         : hasConverged
@@ -303,18 +324,18 @@ export const ReportModal: FC<ReportModalProps> = ({
         </div>
 
         {/* ROW 2, COL 5..8: Interactive Robustness Under Noise */}
-        <div className="col-span-12 sm:col-span-4 border border-[#111111] bg-white/40 p-3 flex flex-col justify-between min-h-0 overflow-hidden">
+        <div className="w-full lg:col-span-4 border border-[#111111] bg-white/40 p-3 flex flex-col justify-between shrink-0 lg:shrink min-h-[175px] lg:min-h-0 overflow-hidden">
           <div className="flex justify-between items-baseline mb-1 shrink-0">
-            <div>
+            <div className="flex items-baseline gap-1.5">
               <span className="font-bold text-xs tracking-tight text-[#111111]">Under noise</span>
-              <span className="ml-1.5 font-mono text-[10px] text-[#111111]/60">steps vs exploratory noise</span>
+              <span className="hidden xs:inline font-mono text-[10px] text-[#111111]/60">vs exploratory noise</span>
             </div>
             <span className="font-mono text-[10px] font-bold text-[#FF4F00] border border-[#FF4F00] px-1.5 py-0.2 bg-white">
               100% Success
             </span>
           </div>
 
-          <div className="flex-1 min-h-0 w-full relative py-1">
+          <div className="h-[95px] lg:h-auto lg:flex-1 min-h-0 w-full relative py-1">
             <InteractiveRobustnessChart
               noise={robustness.noise}
               optimalSteps={meta.optimal_len}
@@ -338,7 +359,7 @@ export const ReportModal: FC<ReportModalProps> = ({
         </div>
 
         {/* ROW 2, COL 9..12: Precision & Coverage */}
-        <div className="col-span-12 sm:col-span-4 border border-[#111111] bg-white/40 p-3 flex flex-col justify-between min-h-0 overflow-hidden">
+        <div className="w-full lg:col-span-4 border border-[#111111] bg-white/40 p-3 flex flex-col justify-between shrink-0 lg:shrink min-h-[195px] lg:min-h-0 overflow-hidden">
           <div className="flex justify-between items-baseline mb-1 shrink-0">
             <span className="font-bold text-xs tracking-tight text-[#111111]">Knows the way</span>
             <span className="font-mono text-[10px] text-[#111111]/60">optimal policy share</span>
@@ -489,13 +510,38 @@ const InteractiveLearningCurve: FC<{
     setHoverIndex(closestIdx);
   };
 
+  const handleTouch = (e: React.TouchEvent<SVGSVGElement>) => {
+    if (!e.touches || e.touches.length === 0) return;
+    const touch = e.touches[0];
+    const rect = e.currentTarget.getBoundingClientRect();
+    const svgX = ((touch.clientX - rect.left) / rect.width) * width;
+    if (svgX < pad.left || svgX > width - pad.right) {
+      setHoverIndex(null);
+      return;
+    }
+    const relEp = minEp + ((svgX - pad.left) / (width - pad.left - pad.right)) * (maxEp - minEp);
+    let closestIdx = 0;
+    let closestDist = Infinity;
+    for (let i = 0; i < n; i++) {
+      const dist = Math.abs(episode_index[i] - relEp);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestIdx = i;
+      }
+    }
+    setHoverIndex(closestIdx);
+  };
+
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
-      className="w-full h-full overflow-visible cursor-crosshair"
+      className="w-full h-full overflow-visible cursor-crosshair touch-none"
       preserveAspectRatio="none"
       onMouseMove={handleMouseMove}
       onMouseLeave={() => setHoverIndex(null)}
+      onTouchStart={handleTouch}
+      onTouchMove={handleTouch}
+      onTouchEnd={() => setHoverIndex(null)}
     >
       {/* Subtle area fill under steps curve */}
       <path d={areaPath} fill="rgba(255, 79, 0, 0.08)" />
@@ -793,6 +839,7 @@ const InteractiveReliabilityChart: FC<{
             className="cursor-pointer transition-all"
             onMouseEnter={() => onHoverSeed(d.seed)}
             onMouseLeave={() => onHoverSeed(null)}
+            onClick={() => onHoverSeed(activeSeedHover === d.seed ? null : d.seed)}
           >
             <title>{`Seed ${d.seed}: Converged at Ep ${d.att}`}</title>
           </circle>
@@ -907,6 +954,7 @@ const InteractiveRobustnessChart: FC<{
               className="cursor-pointer transition-all"
               onMouseEnter={() => setHoverEps(p.eps)}
               onMouseLeave={() => setHoverEps(null)}
+              onClick={() => setHoverEps(hoverEps === p.eps ? null : p.eps)}
             >
               <title>{`Noise ${(p.eps * 100).toFixed(0)}%: ${p.mean_steps.toFixed(1)} mean steps (p90: ${p.p90_steps.toFixed(0)})`}</title>
             </circle>

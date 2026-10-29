@@ -11,6 +11,18 @@
     --hairline: #D9D4C7;
   }
 
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button {
+    touch-action: manipulation;
+  }
+
   body {
     background-color: var(--paper);
     color: var(--ink);
@@ -18,6 +30,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-size: 12px;
+    overflow-x: hidden;
   }
 
   .tabular-nums {
