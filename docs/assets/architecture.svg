@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 180" width="100%" height="180">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#111111" />
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="880" height="180" fill="#F5F2EA" />
+  <rect x="1" y="1" width="878" height="178" fill="none" stroke="#D9D4C7" stroke-width="2" />
+
+  <!-- Box 1: Environment -->
+  <!-- Hard shadow -->
+  <rect x="33" y="43" width="170" height="90" fill="#111111" />
+  <rect x="30" y="40" width="170" height="90" fill="#FFFFFF" stroke="#111111" stroke-width="2" />
+  <text x="45" y="68" font-family="'Space Grotesk', system-ui, sans-serif" font-size="15" font-weight="700" fill="#111111">Environment</text>
+  <text x="45" y="90" font-family="'JetBrains Mono', monospace" font-size="11" fill="#111111" opacity="0.8">11x11 Grid MDP</text>
+  <text x="45" y="108" font-family="'JetBrains Mono', monospace" font-size="11" fill="#111111" opacity="0.8">NumPy Lookups</text>
+
+  <!-- Connector 1 -> 2 -->
+  <line x1="200" y1="85" x2="242" y2="85" stroke="#111111" stroke-width="2" marker-end="url(#arrow)" />
+  <text x="210" y="75" font-family="'JetBrains Mono', monospace" font-size="9" fill="#111111" text-anchor="middle">s, r, done</text>
+
+  <!-- Box 2: Agent -->
+  <!-- Hard shadow -->
+  <rect x="253" y="43" width="170" height="90" fill="#111111" />
+  <rect x="250" y="40" width="170" height="90" fill="#FFFFFF" stroke="#111111" stroke-width="2" />
+  <text x="265" y="68" font-family="'Space Grotesk', system-ui, sans-serif" font-size="15" font-weight="700" fill="#111111">Agent</text>
+  <text x="265" y="90" font-family="'JetBrains Mono', monospace" font-size="11" fill="#111111" opacity="0.8">Tabular Q-Table</text>
+  <text x="265" y="108" font-family="'JetBrains Mono', monospace" font-size="11" fill="#111111" opacity="0.8">TD Bellman Update</text>
+
+  <!-- Connector 2 -> 3 -->
+  <line x1="420" y1="85" x2="462" y2="85" stroke="#111111" stroke-width="2" marker-end="url(#arrow)" />
+  <text x="441" y="75" font-family="'JetBrains Mono', monospace" font-size="9" fill="#111111" text-anchor="middle">values, Q</text>
+
+  <!-- Box 3: Pacer -->
+  <!-- Hard shadow -->
+  <rect x="473" y="43" width="170" height="90" fill="#111111" />
+  <rect x="470" y="40" width="170" height="90" fill="#FFFFFF" stroke="#111111" stroke-width="2" />
+  <rect x="470" y="40" width="6" height="90" fill="#FF4F00" />
+  <text x="488" y="68" font-family="'Space Grotesk', system-ui, sans-serif" font-size="15" font-weight="700" fill="#111111">Pacer</text>
+  <text x="488" y="90" font-family="'JetBrains Mono', monospace" font-size="11" fill="#111111" opacity="0.8">Adaptive Engine</text>
+  <text x="488" y="108" font-family="'JetBrains Mono', monospace" font-size="11" fill="#111111" opacity="0.8">25 Hz Broadcast</text>
+
+  <!-- Connector 3 -> 4 -->
+  <line x1="640" y1="85" x2="682" y2="85" stroke="#111111" stroke-width="2" marker-end="url(#arrow)" />
+  <text x="661" y="75" font-family="'JetBrains Mono', monospace" font-size="9" fill="#111111" text-anchor="middle">ws:// frames</text>
+
+  <!-- Box 4: Canvas -->
+  <!-- Hard shadow -->
+  <rect x="693" y="43" width="150" height="90" fill="#111111" />
+  <rect x="690" y="40" width="150" height="90" fill="#FFFFFF" stroke="#111111" stroke-width="2" />
+  <text x="705" y="68" font-family="'Space Grotesk', system-ui, sans-serif" font-size="15" font-weight="700" fill="#111111">Canvas</text>
+  <text x="705" y="90" font-family="'JetBrains Mono', monospace" font-size="11" fill="#111111" opacity="0.8">HTML5 Canvas</text>
+  <text x="705" y="108" font-family="'JetBrains Mono', monospace" font-size="11" fill="#111111" opacity="0.8">SVG Telemetry</text>
+</svg>

@@ -49,6 +49,7 @@ def test_recorded_report_endpoint(client):
 def test_report_endpoint_409_when_idle(client):
     # If trainer has not solved a run in this session
     trainer.frozen_snapshot = None
+    trainer.frozen_report = None
     res = client.get("/api/report")
     assert res.status_code == 409
     assert "No solved run available" in res.json()["message"]
@@ -81,6 +82,7 @@ def test_report_endpoint_200_when_snapshot_available(client):
         seed=42,
         speed_mode='normal',
     )
+    trainer.frozen_report = None
 
     res = client.get("/api/report")
     assert res.status_code == 200
